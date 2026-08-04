@@ -18,6 +18,14 @@ const defaultData = {
   records: [],
 };
 
+const bodyAreas = ['눈 주위', '왼쪽 눈', '오른쪽 눈', '양쪽 눈', '뒤통수', '목 뒤', '두피', '기타'];
+const symptomKeys = ['itching', 'redness', 'dryness', 'scaling', 'peeling', 'painStinging', 'swelling'];
+const warningKeys = ['oozing', 'yellowCrust', 'pus', 'heat', 'eyePain', 'photophobia', 'blurredVision'];
+const medicationKeys = ['elidel', 'maxidex', 'whitePetrolatum', 'occipitalLiquid', 'otherMedication'];
+const lifestyleNumberKeys = ['sleepSatisfaction', 'fatigue', 'stress'];
+const lifestyleBooleanKeys = ['longScreenTime', 'exercised', 'sweatedMuch', 'hotWaterWash', 'alcohol', 'lateSnack', 'longOutdoorTime', 'dryIndoorAir', 'seasonalChange', 'rubbedOrScratched'];
+const careBooleanKeys = ['washedHair', 'newProductUsed', 'moisturizerUsed', 'whitePetrolatumUsed'];
+
 mkdirSync(dirname(dbPath), { recursive: true });
 
 const db = new DatabaseSync(dbPath);
@@ -69,6 +77,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname.startsWith('/api/records/')) {
+      await handleRecordApi(request, response, decodeURIComponent(url.pathname.slice('/api/records/'.length)));
+      return;
+    }
+
     if (url.pathname.startsWith('/api/')) {
       sendJson(response, 404, { error: 'Not found' });
       return;
@@ -88,7 +101,8 @@ server.listen(port, '0.0.0.0', () => {
 
 async function handleDataApi(request, response) {
   if (request.method === 'GET') {
-    sendJson(response, 200, loadData());
+    const result = loadDataResult();
+    sendJson(response, 200, result.data, { 'X-App-State-Exists': String(result.exists) });
     return;
   }
 
@@ -107,15 +121,58 @@ async function handleDataApi(request, response) {
   response.end();
 }
 
+async function handleRecordApi(request, response, id) {
+  if (!id) {
+    sendJson(response, 400, { error: 'Missing record id' });
+    return;
+  }
+
+  if (request.method === 'PUT') {
+    const record = await readJsonBody(request);
+    if (!isValidRecord(record) || record.id !== id) {
+      sendJson(response, 400, { error: 'Invalid record data' });
+      return;
+    }
+
+    const currentData = loadData();
+    const exists = currentData.records.some((item) => item.id === id);
+    const nextData = {
+      ...currentData,
+      records: exists ? currentData.records.map((item) => (item.id === id ? record : item)) : [...currentData.records, record],
+    };
+    saveState.run(JSON.stringify(nextData));
+    sendJson(response, 200, nextData);
+    return;
+  }
+
+  if (request.method === 'DELETE') {
+    const currentData = loadData();
+    const nextData = {
+      ...currentData,
+      records: currentData.records.filter((record) => record.id !== id),
+    };
+    saveState.run(JSON.stringify(nextData));
+    sendJson(response, 200, nextData);
+    return;
+  }
+
+  response.writeHead(405, { Allow: 'PUT, DELETE' });
+  response.end();
+}
+
 function loadData() {
+  return loadDataResult().data;
+}
+
+function loadDataResult() {
   const row = getState.get();
-  if (!row) return defaultData;
+  if (!row) return { data: defaultData, exists: false };
 
   try {
     const parsed = JSON.parse(row.data);
-    return isValidAppData(parsed) ? parsed : defaultData;
+    return { data: isValidAppData(parsed) ? parsed : defaultData, exists: true };
   } catch {
-    return defaultData;
+    return { data: defaultData, exists: true };
   }
 }
 
@@ -126,8 +183,45 @@ function isValidAppData(value) {
     value.storageVersion === 1 &&
     value.settings &&
     typeof value.settings.humiraIntervalDays === 'number' &&
-    Array.isArray(value.records)
+    Array.isArray(value.records) &&
+    value.records.every(isValidRecord)
   );
+}
+
+function isValidRecord(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    ['id', 'date', 'time', 'memo', 'createdAt', 'updatedAt'].every((key) => typeof value[key] === 'string') &&
+    Array.isArray(value.areas) &&
+    value.areas.every((area) => bodyAreas.includes(area)) &&
+    hasNumberMap(value.symptomScores, symptomKeys, 0, 10) &&
+    hasBooleanMap(value.warnings, warningKeys) &&
+    hasBooleanMap(value.medications, medicationKeys) &&
+    value.lifestyle &&
+    typeof value.lifestyle.previousNightSleepHours === 'number' &&
+    value.lifestyle.previousNightSleepHours >= 0 &&
+    value.lifestyle.previousNightSleepHours <= 24 &&
+    hasNumberMap(value.lifestyle, lifestyleNumberKeys, 0, 10) &&
+    hasBooleanMap(value.lifestyle, lifestyleBooleanKeys) &&
+    value.care &&
+    typeof value.care.shampooName === 'string' &&
+    typeof value.care.cleanserName === 'string' &&
+    hasBooleanMap(value.care, careBooleanKeys) &&
+    value.humira &&
+    typeof value.humira.used === 'boolean' &&
+    typeof value.humira.actualInjectionDate === 'string' &&
+    (typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null) &&
+    typeof value.humira.nextExpectedInjectionDate === 'string'
+  );
+}
+
+function hasNumberMap(value, keys, min, max) {
+  return value && typeof value === 'object' && keys.every((key) => typeof value[key] === 'number' && value[key] >= min && value[key] <= max);
+}
+
+function hasBooleanMap(value, keys) {
+  return value && typeof value === 'object' && keys.every((key) => typeof value[key] === 'boolean');
 }
 
 function readJsonBody(request) {
@@ -169,11 +263,11 @@ async function serveStatic(pathname, response) {
   response.end(content);
 }
 
-function sendJson(response, statusCode, data) {
+function sendJson(response, statusCode, data, headers = {}) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-cache',
+    ...headers,
   });
   response.end(JSON.stringify(data));
 }
-

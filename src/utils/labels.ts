@@ -1,5 +1,5 @@
 ﻿import { MEDICATION_KEYS, SYMPTOM_KEYS } from '../types/record';
-import type { DermatitisRecord, MedicationKey, WarningKey } from '../types/record';
+import type { CareLog, DermatitisRecord, LifestyleLog, MedicationKey, WarningKey } from '../types/record';
 
 export const SYMPTOM_LABELS: Record<(typeof SYMPTOM_KEYS)[number], string> = {
   itching: '가려움',
@@ -29,10 +29,36 @@ export const MEDICATION_LABELS: Record<MedicationKey, string> = {
   otherMedication: '기타 약',
 };
 
+export const LIFESTYLE_BOOLEAN_LABELS: Record<BooleanKeys<LifestyleLog>, string> = {
+  longScreenTime: '화면 오래 봄',
+  exercised: '운동',
+  sweatedMuch: '땀 많이 흘림',
+  hotWaterWash: '뜨거운 물 세안/샤워',
+  alcohol: '음주',
+  lateSnack: '야식',
+  longOutdoorTime: '긴 외출',
+  dryIndoorAir: '건조한 실내',
+  seasonalChange: '환절기',
+  rubbedOrScratched: '비비거나 긁음',
+};
+
+export const CARE_BOOLEAN_LABELS: Record<BooleanKeys<CareLog>, string> = {
+  washedHair: '머리 감음',
+  newProductUsed: '새 제품 사용',
+  moisturizerUsed: '보습제 사용',
+  whitePetrolatumUsed: '백색 바세린 사용',
+};
+
 export function getUsedMedicationLabels(record: DermatitisRecord): string[] {
   return MEDICATION_KEYS.filter((key) => record.medications[key]).map((key) => MEDICATION_LABELS[key]);
+}
+
+export function getActiveLabels<T extends object>(values: T, labels: Record<BooleanKeys<T>, string>): string[] {
+  return (Object.entries(labels) as Array<[keyof T, string]>).filter(([key]) => Boolean(values[key])).map(([, label]) => label);
 }
 
 export function hasMedicalNoticeWarning(record: Pick<DermatitisRecord, 'warnings'>): boolean {
   return record.warnings.oozing || record.warnings.pus || record.warnings.eyePain || record.warnings.photophobia || record.warnings.blurredVision;
 }
+
+type BooleanKeys<T> = { [Key in keyof T]: T[Key] extends boolean ? Key : never }[keyof T];

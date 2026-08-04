@@ -4,7 +4,7 @@ import { DataPage } from './pages/DataPage';
 import { ListPage } from './pages/ListPage';
 import { StatsPage } from './pages/StatsPage';
 import { TodayPage } from './pages/TodayPage';
-import { loadAppData, loadPersistedAppData, savePersistedAppData } from './storage/appStorage';
+import { deletePersistedRecord, loadAppData, loadPersistedAppData, replacePersistedAppData, upsertPersistedRecord } from './storage/appStorage';
 import type { AppData, DermatitisRecord } from './types/record';
 
 type TabKey = 'today' | 'list' | 'stats' | 'data';
@@ -18,34 +18,21 @@ const tabs: Array<{ key: TabKey; label: string }> = [
 
 function App() {
   const [data, setData] = useState<AppData>(() => loadAppData());
-  const [isLoaded, setIsLoaded] = useState(false);
   const [isServerBacked, setIsServerBacked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('today');
   const [editingRecord, setEditingRecord] = useState<DermatitisRecord | null>(null);
 
   useEffect(() => {
     let isActive = true;
-    void loadPersistedAppData().then((loadedData) => {
+    void loadPersistedAppData().then((loaded) => {
       if (!isActive) return;
-      setData(loadedData);
-      setIsLoaded(true);
+      setData(loaded.data);
+      setIsServerBacked(loaded.serverBacked);
     });
     return () => {
       isActive = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    let isActive = true;
-    void savePersistedAppData(data).then((savedToServer) => {
-      if (isActive) setIsServerBacked(savedToServer);
-    });
-    return () => {
-      isActive = false;
-    };
-  }, [data, isLoaded]);
 
   const sortedRecords = useMemo(
     () => [...data.records].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)),
@@ -61,10 +48,12 @@ function App() {
       };
     });
     setEditingRecord(null);
+    void upsertPersistedRecord(record).then(setIsServerBacked);
   }
 
   function deleteRecord(id: string) {
     setData((current) => ({ ...current, records: current.records.filter((record) => record.id !== id) }));
+    void deletePersistedRecord(id).then(setIsServerBacked);
   }
 
   function startEdit(record: DermatitisRecord) {
@@ -75,6 +64,7 @@ function App() {
   function replaceData(nextData: AppData) {
     setData(nextData);
     setEditingRecord(null);
+    void replacePersistedAppData(nextData).then(setIsServerBacked);
   }
 
   return (

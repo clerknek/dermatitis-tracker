@@ -1,8 +1,8 @@
 ﻿import { useRef, useState } from 'react';
-import type { AppData, DermatitisRecord } from '../types/record';
+import { MEDICATION_KEYS, SYMPTOM_KEYS, WARNING_KEYS } from '../types/record';
+import type { AppData, CareLog, DermatitisRecord, LifestyleLog } from '../types/record';
 import { validateAppData, createEmptyData } from '../storage/appStorage';
 import { calculateSymptomAverage } from '../utils/scores';
-import { getUsedMedicationLabels } from '../utils/labels';
 
 export function DataPage({ data, onReplaceData }: { data: AppData; onReplaceData: (data: AppData) => void }) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -89,18 +89,60 @@ export function DataPage({ data, onReplaceData }: { data: AppData; onReplaceData
 }
 
 function buildCsv(records: DermatitisRecord[]): string {
-  const header = ['id', 'date', 'time', 'areas', 'itching', 'symptomAverage', 'medications', 'humiraUsed', 'humiraDate', 'memo'];
+  const lifestyleKeys: Array<keyof LifestyleLog> = [
+    'previousNightSleepHours',
+    'sleepSatisfaction',
+    'fatigue',
+    'stress',
+    'longScreenTime',
+    'exercised',
+    'sweatedMuch',
+    'hotWaterWash',
+    'alcohol',
+    'lateSnack',
+    'longOutdoorTime',
+    'dryIndoorAir',
+    'seasonalChange',
+    'rubbedOrScratched',
+  ];
+  const careKeys: Array<keyof CareLog> = ['washedHair', 'shampooName', 'cleanserName', 'newProductUsed', 'moisturizerUsed', 'whitePetrolatumUsed'];
+  const header = [
+    'id',
+    'date',
+    'time',
+    'areas',
+    ...SYMPTOM_KEYS,
+    'symptomAverage',
+    ...WARNING_KEYS.map((key) => `warning_${key}`),
+    ...lifestyleKeys.map((key) => `lifestyle_${key}`),
+    ...careKeys.map((key) => `care_${key}`),
+    ...MEDICATION_KEYS.map((key) => `medication_${key}`),
+    'humiraUsed',
+    'humiraDate',
+    'humiraDaysSinceLastInjection',
+    'humiraNextExpectedInjectionDate',
+    'memo',
+    'createdAt',
+    'updatedAt',
+  ];
   const rows = records.map((record) => [
     record.id,
     record.date,
     record.time,
     record.areas.join('|'),
-    String(record.symptomScores.itching),
+    ...SYMPTOM_KEYS.map((key) => String(record.symptomScores[key])),
     String(calculateSymptomAverage(record.symptomScores)),
-    getUsedMedicationLabels(record).join('|'),
+    ...WARNING_KEYS.map((key) => String(record.warnings[key])),
+    ...lifestyleKeys.map((key) => String(record.lifestyle[key])),
+    ...careKeys.map((key) => String(record.care[key])),
+    ...MEDICATION_KEYS.map((key) => String(record.medications[key])),
     record.humira.used ? 'yes' : 'no',
     record.humira.actualInjectionDate,
+    record.humira.daysSinceLastInjection === null ? '' : String(record.humira.daysSinceLastInjection),
+    record.humira.nextExpectedInjectionDate,
     record.memo,
+    record.createdAt,
+    record.updatedAt,
   ]);
   return [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
 }

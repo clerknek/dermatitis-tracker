@@ -82,7 +82,9 @@ export function loadAppData(storage: Storage = localStorage): AppData {
   }
 }
 
-export async function loadPersistedAppData(storage: Storage = localStorage): Promise<AppData> {
+export async function loadPersistedAppData(storage: Storage = localStorage): Promise<{ data: AppData; serverBacked: boolean }> {
+  const localData = loadAppData(storage);
+
   try {
     const response = await fetch('/api/data', {
       headers: { Accept: 'application/json' },
@@ -93,14 +95,20 @@ export async function loadPersistedAppData(storage: Storage = localStorage): Pro
     const validation = validateAppData(parsed);
     if (!validation.ok) throw new Error(validation.error);
 
+    const serverHasState = response.headers.get('x-app-state-exists') === 'true';
+    if (!serverHasState && validation.data.records.length === 0 && localData.records.length > 0) {
+      const migrated = await replacePersistedAppData(localData, storage);
+      return { data: localData, serverBacked: migrated };
+    }
+
     saveAppData(validation.data, storage);
-    return validation.data;
+    return { data: validation.data, serverBacked: true };
   } catch {
-    return loadAppData(storage);
+    return { data: localData, serverBacked: false };
   }
 }
 
-export async function savePersistedAppData(data: AppData, storage: Storage = localStorage): Promise<boolean> {
+export async function replacePersistedAppData(data: AppData, storage: Storage = localStorage): Promise<boolean> {
   saveAppData(data, storage);
 
   try {
@@ -111,6 +119,45 @@ export async function savePersistedAppData(data: AppData, storage: Storage = loc
         Accept: 'application/json',
       },
       body: JSON.stringify(data),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function upsertPersistedRecord(record: DermatitisRecord, storage: Storage = localStorage): Promise<boolean> {
+  const localData = loadAppData(storage);
+  const exists = localData.records.some((item) => item.id === record.id);
+  const nextData: AppData = {
+    ...localData,
+    records: exists ? localData.records.map((item) => (item.id === record.id ? record : item)) : [...localData.records, record],
+  };
+  saveAppData(nextData, storage);
+
+  try {
+    const response = await fetch(`/api/records/${encodeURIComponent(record.id)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(record),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function deletePersistedRecord(id: string, storage: Storage = localStorage): Promise<boolean> {
+  const localData = loadAppData(storage);
+  saveAppData({ ...localData, records: localData.records.filter((record) => record.id !== id) }, storage);
+
+  try {
+    const response = await fetch(`/api/records/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
     });
     return response.ok;
   } catch {
@@ -148,9 +195,14 @@ export function validateRecord(value: unknown): { ok: true } | { ok: false; erro
   if (!hasNumberMap(value.symptomScores, [...SYMPTOM_KEYS], 0, 10)) return { ok: false, error: '증상 점수 구조가 올바르지 않습니다.' };
   if (!hasBooleanMap(value.warnings, [...WARNING_KEYS])) return { ok: false, error: '주의 증상 구조가 올바르지 않습니다.' };
   if (!hasBooleanMap(value.medications, [...MEDICATION_KEYS])) return { ok: false, error: '약 사용 구조가 올바르지 않습니다.' };
-  if (!isObject(value.lifestyle) || typeof value.lifestyle.previousNightSleepHours !== 'number') return { ok: false, error: '생활 패턴 구조가 올바르지 않습니다.' };
+  if (!isObject(value.lifestyle)) return { ok: false, error: '생활 패턴 구조가 올바르지 않습니다.' };
+  if (!hasNumberMap(value.lifestyle, ['previousNightSleepHours'], 0, 24)) return { ok: false, error: '수면시간 구조가 올바르지 않습니다.' };
+  if (!hasNumberMap(value.lifestyle, ['sleepSatisfaction', 'fatigue', 'stress'], 0, 10)) return { ok: false, error: '생활 패턴 점수 구조가 올바르지 않습니다.' };
+  if (!hasBooleanMap(value.lifestyle, ['longScreenTime', 'exercised', 'sweatedMuch', 'hotWaterWash', 'alcohol', 'lateSnack', 'longOutdoorTime', 'dryIndoorAir', 'seasonalChange', 'rubbedOrScratched'])) return { ok: false, error: '생활 패턴 체크 항목 구조가 올바르지 않습니다.' };
   if (!isObject(value.care) || typeof value.care.shampooName !== 'string' || typeof value.care.cleanserName !== 'string') return { ok: false, error: '관리 항목 구조가 올바르지 않습니다.' };
-  if (!isObject(value.humira) || typeof value.humira.used !== 'boolean' || typeof value.humira.actualInjectionDate !== 'string') return { ok: false, error: '휴미라 기록 구조가 올바르지 않습니다.' };
+  if (!hasBooleanMap(value.care, ['washedHair', 'newProductUsed', 'moisturizerUsed', 'whitePetrolatumUsed'])) return { ok: false, error: '관리 체크 항목 구조가 올바르지 않습니다.' };
+  if (!isObject(value.humira) || typeof value.humira.used !== 'boolean' || typeof value.humira.actualInjectionDate !== 'string' || typeof value.humira.nextExpectedInjectionDate !== 'string') return { ok: false, error: '휴미라 기록 구조가 올바르지 않습니다.' };
+  if (!(typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null)) return { ok: false, error: '휴미라 경과 일수 구조가 올바르지 않습니다.' };
   return { ok: true };
 }
 

@@ -1,5 +1,6 @@
 ﻿import { useMemo, useState } from 'react';
 import type { DermatitisRecord } from '../types/record';
+import { addDays, todayInSeoul } from '../utils/dates';
 import { getUsedMedicationLabels } from '../utils/labels';
 import { average, calculateSymptomAverage, getWorstSymptomDate } from '../utils/scores';
 
@@ -58,9 +59,7 @@ export function StatsPage({ records }: { records: DermatitisRecord[] }) {
 }
 
 function filterRecentRecords(records: DermatitisRecord[], period: Period): DermatitisRecord[] {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - period + 1);
-  const cutoffText = cutoff.toISOString().slice(0, 10);
+  const cutoffText = addDays(todayInSeoul(), -period + 1);
   return records.filter((record) => record.date >= cutoffText);
 }
 

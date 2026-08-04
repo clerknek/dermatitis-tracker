@@ -1,5 +1,5 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
-import { createEmptyCare, createEmptyData, createEmptyHumira, createEmptyLifestyle, createEmptyMedications, createEmptyWarnings, loadAppData, saveAppData, validateAppData } from '../storage/appStorage';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createEmptyCare, createEmptyData, createEmptyHumira, createEmptyLifestyle, createEmptyMedications, createEmptyWarnings, loadAppData, loadPersistedAppData, saveAppData, validateAppData } from '../storage/appStorage';
 import type { AppData, DermatitisRecord } from '../types/record';
 import { daysBetween, getNextHumiraDate, isRecordInDateRange } from '../utils/dates';
 import { createId } from '../utils/id';
@@ -59,11 +59,39 @@ describe('storage validation', () => {
     expect(validateAppData({ ...data, records: [{ id: 1 }] }).ok).toBe(false);
   });
 
+  it('rejects records with missing lifestyle fields', () => {
+    const record = makeRecord();
+    const data: AppData = { ...createEmptyData(), records: [{ ...record, lifestyle: { previousNightSleepHours: 7 } } as DermatitisRecord] };
+    expect(validateAppData(data).ok).toBe(false);
+  });
+
   it('saves and loads data through localStorage', () => {
     const data: AppData = { ...createEmptyData(), records: [makeRecord({ id: 'saved-record' })] };
     saveAppData(data);
     expect(loadAppData().records).toHaveLength(1);
     expect(loadAppData().records[0]?.id).toBe('saved-record');
+  });
+
+  it('migrates local records when the server store is empty', async () => {
+    const data: AppData = { ...createEmptyData(), records: [makeRecord({ id: 'local-record' })] };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(createEmptyData()), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(data), { status: 200 }));
+
+    vi.stubGlobal('fetch', fetchMock);
+    saveAppData(data);
+
+    const loaded = await loadPersistedAppData();
+
+    expect(loaded.serverBacked).toBe(true);
+    expect(loaded.data.records[0]?.id).toBe('local-record');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/data',
+      expect.objectContaining({
+        method: 'PUT',
+      }),
+    );
   });
 });
 
@@ -75,4 +103,8 @@ describe('id utilities', () => {
 
 beforeEach(() => {
   localStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });

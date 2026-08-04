@@ -2,7 +2,7 @@
 import { BODY_AREAS } from '../types/record';
 import type { BodyArea, DateRangeFilter, DermatitisRecord } from '../types/record';
 import { isRecordInDateRange } from '../utils/dates';
-import { MEDICATION_LABELS, getUsedMedicationLabels } from '../utils/labels';
+import { CARE_BOOLEAN_LABELS, LIFESTYLE_BOOLEAN_LABELS, MEDICATION_LABELS, SYMPTOM_LABELS, WARNING_LABELS, getActiveLabels, getUsedMedicationLabels } from '../utils/labels';
 import { calculateSymptomAverage } from '../utils/scores';
 
 interface ListPageProps {
@@ -70,8 +70,12 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
               {isOpen && (
                 <div className="detail-box">
                   <p><strong>메모</strong> {record.memo || '없음'}</p>
+                  <p><strong>증상 점수</strong> {Object.entries(record.symptomScores).map(([key, value]) => `${SYMPTOM_LABELS[key as keyof typeof SYMPTOM_LABELS]} ${value}점`).join(', ')}</p>
+                  <p><strong>주의 증상</strong> {Object.entries(record.warnings).filter(([, checked]) => checked).map(([key]) => WARNING_LABELS[key as keyof typeof WARNING_LABELS]).join(', ') || '없음'}</p>
                   <p><strong>샴푸</strong> {record.care.shampooName || '-'} · <strong>세안제</strong> {record.care.cleanserName || '-'}</p>
-                  <p><strong>수면</strong> {record.lifestyle.previousNightSleepHours}시간 · <strong>피로</strong> {record.lifestyle.fatigue}점 · <strong>스트레스</strong> {record.lifestyle.stress}점</p>
+                  <p><strong>생활 점수</strong> 수면 {record.lifestyle.previousNightSleepHours}시간 · 만족도 {record.lifestyle.sleepSatisfaction}점 · 피로 {record.lifestyle.fatigue}점 · 스트레스 {record.lifestyle.stress}점</p>
+                  <p><strong>생활 체크</strong> {getActiveLabels(record.lifestyle, LIFESTYLE_BOOLEAN_LABELS).join(', ') || '없음'}</p>
+                  <p><strong>관리 체크</strong> {getActiveLabels(record.care, CARE_BOOLEAN_LABELS).join(', ') || '없음'}</p>
                   <p><strong>다음 휴미라 예상일</strong> {record.humira.nextExpectedInjectionDate || '-'}</p>
                   <p><strong>약 항목</strong> {Object.entries(record.medications).filter(([, used]) => used).map(([key]) => MEDICATION_LABELS[key as keyof typeof MEDICATION_LABELS]).join(', ') || '없음'}</p>
                 </div>
