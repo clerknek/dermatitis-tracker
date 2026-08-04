@@ -82,7 +82,7 @@ export function DataPage({ data, onReplaceData }: { data: AppData; onReplaceData
 
       <div className="section-card notice-card">
         <p>이 앱은 개인 증상 기록을 위한 도구이며 의학적 진단이나 치료를 제공하지 않습니다. 약은 처방받은 방법에 따라 사용하고, 증상이 악화되거나 눈 통증, 시야 변화, 진물, 고름, 발열 등이 나타나면 의료진에게 문의하세요.</p>
-        <p>입력한 데이터는 현재 사용 중인 브라우저의 기기에만 저장되며 외부 서버로 전송되지 않습니다.</p>
+        <p>Docker 실행 환경에서는 입력 데이터가 SQLite 데이터베이스에 저장되며, 브라우저에는 백업 사본이 남습니다.</p>
       </div>
     </section>
   );

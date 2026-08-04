@@ -2,6 +2,7 @@
 import { BODY_AREAS, MEDICATION_KEYS, SYMPTOM_KEYS, WARNING_KEYS } from '../types/record';
 import type { AppSettings, BodyArea, CareLog, DermatitisRecord, LifestyleLog, MedicationKey, SymptomKey, WarningKey } from '../types/record';
 import { getSeoulDateTimeParts, getNextHumiraDate, daysBetween } from '../utils/dates';
+import { createId } from '../utils/id';
 import { MEDICATION_LABELS, SYMPTOM_LABELS, WARNING_LABELS, hasMedicalNoticeWarning } from '../utils/labels';
 import { calculateSymptomAverage, getSeverityLabel } from '../utils/scores';
 import { createEmptyCare, createEmptyHumira, createEmptyLifestyle, createEmptyMedications, createEmptyScores, createEmptyWarnings } from '../storage/appStorage';
@@ -17,7 +18,7 @@ function createDraft(editingRecord: DermatitisRecord | null): DermatitisRecord {
   if (editingRecord) return structuredClone(editingRecord);
   const now = getSeoulDateTimeParts();
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     date: now.date,
     time: now.time,
     areas: [],

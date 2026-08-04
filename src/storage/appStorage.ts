@@ -82,6 +82,42 @@ export function loadAppData(storage: Storage = localStorage): AppData {
   }
 }
 
+export async function loadPersistedAppData(storage: Storage = localStorage): Promise<AppData> {
+  try {
+    const response = await fetch('/api/data', {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error('Failed to load app data');
+
+    const parsed: unknown = await response.json();
+    const validation = validateAppData(parsed);
+    if (!validation.ok) throw new Error(validation.error);
+
+    saveAppData(validation.data, storage);
+    return validation.data;
+  } catch {
+    return loadAppData(storage);
+  }
+}
+
+export async function savePersistedAppData(data: AppData, storage: Storage = localStorage): Promise<boolean> {
+  saveAppData(data, storage);
+
+  try {
+    const response = await fetch('/api/data', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function replaceRecords(records: DermatitisRecord[], storage: Storage = localStorage): AppData {
   const data = { ...loadAppData(storage), records };
   saveAppData(data, storage);

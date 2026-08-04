@@ -1,0 +1,16 @@
+services:
+  dermatitis-tracker:
+    build: .
+    image: dermatitis-tracker:latest
+    container_name: dermatitis-tracker
+    ports:
+      - "8080:80"
+    environment:
+      DB_PATH: /data/dermatitis-tracker.sqlite
+    volumes:
+      - dermatitis-tracker-data:/data
+    restart: unless-stopped
+
+volumes:
+  dermatitis-tracker-data:
+

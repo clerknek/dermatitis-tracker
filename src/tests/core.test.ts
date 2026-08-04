@@ -2,6 +2,7 @@
 import { createEmptyCare, createEmptyData, createEmptyHumira, createEmptyLifestyle, createEmptyMedications, createEmptyWarnings, loadAppData, saveAppData, validateAppData } from '../storage/appStorage';
 import type { AppData, DermatitisRecord } from '../types/record';
 import { daysBetween, getNextHumiraDate, isRecordInDateRange } from '../utils/dates';
+import { createId } from '../utils/id';
 import { calculateSymptomAverage } from '../utils/scores';
 
 function makeRecord(overrides: Partial<DermatitisRecord> = {}): DermatitisRecord {
@@ -63,6 +64,12 @@ describe('storage validation', () => {
     saveAppData(data);
     expect(loadAppData().records).toHaveLength(1);
     expect(loadAppData().records[0]?.id).toBe('saved-record');
+  });
+});
+
+describe('id utilities', () => {
+  it('creates a record id', () => {
+    expect(createId()).toMatch(/\S+/);
   });
 });
 

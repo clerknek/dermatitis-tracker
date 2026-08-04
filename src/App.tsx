@@ -4,7 +4,7 @@ import { DataPage } from './pages/DataPage';
 import { ListPage } from './pages/ListPage';
 import { StatsPage } from './pages/StatsPage';
 import { TodayPage } from './pages/TodayPage';
-import { loadAppData, saveAppData } from './storage/appStorage';
+import { loadAppData, loadPersistedAppData, savePersistedAppData } from './storage/appStorage';
 import type { AppData, DermatitisRecord } from './types/record';
 
 type TabKey = 'today' | 'list' | 'stats' | 'data';
@@ -18,12 +18,34 @@ const tabs: Array<{ key: TabKey; label: string }> = [
 
 function App() {
   const [data, setData] = useState<AppData>(() => loadAppData());
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isServerBacked, setIsServerBacked] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('today');
   const [editingRecord, setEditingRecord] = useState<DermatitisRecord | null>(null);
 
   useEffect(() => {
-    saveAppData(data);
-  }, [data]);
+    let isActive = true;
+    void loadPersistedAppData().then((loadedData) => {
+      if (!isActive) return;
+      setData(loadedData);
+      setIsLoaded(true);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    let isActive = true;
+    void savePersistedAppData(data).then((savedToServer) => {
+      if (isActive) setIsServerBacked(savedToServer);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [data, isLoaded]);
 
   const sortedRecords = useMemo(
     () => [...data.records].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)),
@@ -62,7 +84,7 @@ function App() {
           <p className="eyebrow">개인용 기록 도구</p>
           <h1>피부염 증상 기록</h1>
         </div>
-        <p className="privacy-pill">기기 내 저장</p>
+        <p className="privacy-pill">{isServerBacked ? 'SQLite 저장' : '로컬 백업'}</p>
       </header>
 
       <nav className="tab-bar" aria-label="화면 이동">
@@ -94,7 +116,7 @@ function App() {
 
       <footer className="app-footer">
         <p>이 앱은 개인 증상 기록을 위한 도구이며 의학적 진단이나 치료를 제공하지 않습니다. 약은 처방받은 방법에 따라 사용하고, 증상이 악화되거나 눈 통증, 시야 변화, 진물, 고름, 발열 등이 나타나면 의료진에게 문의하세요.</p>
-        <p>입력한 데이터는 현재 사용 중인 브라우저의 기기에만 저장되며 외부 서버로 전송되지 않습니다.</p>
+        <p>Docker 실행 환경에서는 입력 데이터가 SQLite 데이터베이스에 저장되며, 브라우저에는 백업 사본이 남습니다.</p>
       </footer>
     </div>
   );
