@@ -1,7 +1,9 @@
 ﻿import { BODY_AREAS, MEDICATION_KEYS, STORAGE_VERSION, SYMPTOM_KEYS, WARNING_KEYS } from '../types/record';
-import type { AppData, AppSettings, BodyArea, CareLog, DermatitisRecord, HumiraLog, LifestyleLog, MedicationUsage, SymptomScores, WarningSigns } from '../types/record';
+import type { AppData, AppSettings, BodyArea, CareLog, DermatitisRecord, HumiraLog, LifestyleLog, MedicationUsage, SymptomScores, WarningSigns, WoundPhoto } from '../types/record';
 
 const STORAGE_KEY = 'dermatitis-tracker:data';
+const MAX_PHOTOS_PER_RECORD = 6;
+const MAX_PHOTO_DATA_URL_LENGTH = 2_500_000;
 
 export const defaultSettings: AppSettings = {
   humiraIntervalDays: 21,
@@ -178,11 +180,13 @@ export function validateAppData(value: unknown): { ok: true; data: AppData } | {
     return { ok: false, error: 'settings 구조가 올바르지 않습니다.' };
   }
   if (!Array.isArray(value.records)) return { ok: false, error: 'records는 배열이어야 합니다.' };
+  const records: DermatitisRecord[] = [];
   for (const record of value.records) {
     const result = validateRecord(record);
     if (!result.ok) return result;
+    records.push(normalizeRecord(record));
   }
-  return { ok: true, data: value as unknown as AppData };
+  return { ok: true, data: { ...(value as unknown as AppData), records } };
 }
 
 export function validateRecord(value: unknown): { ok: true } | { ok: false; error: string } {
@@ -203,7 +207,35 @@ export function validateRecord(value: unknown): { ok: true } | { ok: false; erro
   if (!hasBooleanMap(value.care, ['washedHair', 'newProductUsed', 'moisturizerUsed', 'whitePetrolatumUsed'])) return { ok: false, error: '관리 체크 항목 구조가 올바르지 않습니다.' };
   if (!isObject(value.humira) || typeof value.humira.used !== 'boolean' || typeof value.humira.actualInjectionDate !== 'string' || typeof value.humira.nextExpectedInjectionDate !== 'string') return { ok: false, error: '휴미라 기록 구조가 올바르지 않습니다.' };
   if (!(typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null)) return { ok: false, error: '휴미라 경과 일수 구조가 올바르지 않습니다.' };
+  if (value.photos !== undefined && !hasValidPhotos(value.photos)) return { ok: false, error: '사진 기록 구조가 올바르지 않습니다.' };
   return { ok: true };
+}
+
+function normalizeRecord(value: unknown): DermatitisRecord {
+  const record = value as DermatitisRecord;
+  return {
+    ...record,
+    photos: Array.isArray(record.photos) ? record.photos : [],
+  };
+}
+
+function hasValidPhotos(value: unknown): value is WoundPhoto[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= MAX_PHOTOS_PER_RECORD &&
+    value.every((photo) =>
+      isObject(photo) &&
+      typeof photo.id === 'string' &&
+      typeof photo.dataUrl === 'string' &&
+      /^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) &&
+      photo.dataUrl.length <= MAX_PHOTO_DATA_URL_LENGTH &&
+      typeof photo.mimeType === 'string' &&
+      ['image/jpeg', 'image/png', 'image/webp'].includes(photo.mimeType) &&
+      typeof photo.name === 'string' &&
+      typeof photo.caption === 'string' &&
+      typeof photo.createdAt === 'string',
+    )
+  );
 }
 
 function hasNumberMap(value: unknown, keys: string[], min: number, max: number): boolean {

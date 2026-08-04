@@ -81,6 +81,15 @@ export interface HumiraLog {
   nextExpectedInjectionDate: string;
 }
 
+export interface WoundPhoto {
+  id: string;
+  dataUrl: string;
+  mimeType: string;
+  name: string;
+  caption: string;
+  createdAt: string;
+}
+
 export interface DermatitisRecord {
   id: string;
   date: string;
@@ -92,6 +101,7 @@ export interface DermatitisRecord {
   care: CareLog;
   medications: MedicationUsage;
   humira: HumiraLog;
+  photos: WoundPhoto[];
   memo: string;
   createdAt: string;
   updatedAt: string;

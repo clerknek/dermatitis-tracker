@@ -66,6 +66,7 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
               <dl className="summary-grid">
                 <div><dt>사용한 약</dt><dd>{medications.length > 0 ? medications.join(', ') : '없음'}</dd></div>
                 <div><dt>휴미라</dt><dd>{record.humira.used ? `투여 (${record.humira.actualInjectionDate || '날짜 미입력'})` : '투여 안 함'}</dd></div>
+                <div><dt>사진</dt><dd>{record.photos?.length ? `${record.photos.length}장` : '없음'}</dd></div>
               </dl>
               {isOpen && (
                 <div className="detail-box">
@@ -78,6 +79,16 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
                   <p><strong>관리 체크</strong> {getActiveLabels(record.care, CARE_BOOLEAN_LABELS).join(', ') || '없음'}</p>
                   <p><strong>다음 휴미라 예상일</strong> {record.humira.nextExpectedInjectionDate || '-'}</p>
                   <p><strong>약 항목</strong> {Object.entries(record.medications).filter(([, used]) => used).map(([key]) => MEDICATION_LABELS[key as keyof typeof MEDICATION_LABELS]).join(', ') || '없음'}</p>
+                  {(record.photos?.length ?? 0) > 0 && (
+                    <div className="photo-grid compact">
+                      {record.photos.map((photo) => (
+                        <figure className="photo-item readonly" key={photo.id}>
+                          <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                          <figcaption>{photo.caption || photo.name || '사진 메모 없음'}</figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="inline-actions right">

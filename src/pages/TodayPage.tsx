@@ -1,11 +1,15 @@
 ﻿import { useEffect, useState } from 'react';
 import { BODY_AREAS, MEDICATION_KEYS, SYMPTOM_KEYS, WARNING_KEYS } from '../types/record';
-import type { AppSettings, BodyArea, CareLog, DermatitisRecord, LifestyleLog, MedicationKey, SymptomKey, WarningKey } from '../types/record';
+import type { AppSettings, BodyArea, CareLog, DermatitisRecord, LifestyleLog, MedicationKey, SymptomKey, WarningKey, WoundPhoto } from '../types/record';
 import { getSeoulDateTimeParts, getNextHumiraDate, daysBetween } from '../utils/dates';
 import { createId } from '../utils/id';
 import { MEDICATION_LABELS, SYMPTOM_LABELS, WARNING_LABELS, hasMedicalNoticeWarning } from '../utils/labels';
 import { calculateSymptomAverage, getSeverityLabel } from '../utils/scores';
 import { createEmptyCare, createEmptyHumira, createEmptyLifestyle, createEmptyMedications, createEmptyScores, createEmptyWarnings } from '../storage/appStorage';
+
+const MAX_PHOTOS_PER_RECORD = 6;
+const PHOTO_MAX_EDGE = 1280;
+const PHOTO_JPEG_QUALITY = 0.82;
 
 interface TodayPageProps {
   editingRecord: DermatitisRecord | null;
@@ -15,7 +19,7 @@ interface TodayPageProps {
 }
 
 function createDraft(editingRecord: DermatitisRecord | null): DermatitisRecord {
-  if (editingRecord) return structuredClone(editingRecord);
+  if (editingRecord) return { ...structuredClone(editingRecord), photos: editingRecord.photos ?? [] };
   const now = getSeoulDateTimeParts();
   return {
     id: createId(),
@@ -28,6 +32,7 @@ function createDraft(editingRecord: DermatitisRecord | null): DermatitisRecord {
     care: createEmptyCare(),
     medications: createEmptyMedications(),
     humira: createEmptyHumira(),
+    photos: [],
     memo: '',
     createdAt: now.iso,
     updatedAt: now.iso,
@@ -77,6 +82,36 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
     setDraft((current) => ({ ...current, care: { ...current.care, [key]: value } }));
   }
 
+  async function addPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const slots = MAX_PHOTOS_PER_RECORD - (draft.photos?.length ?? 0);
+    if (slots <= 0) {
+      setStatus({ type: 'error', text: `사진은 기록당 최대 ${MAX_PHOTOS_PER_RECORD}장까지 저장할 수 있습니다.` });
+      return;
+    }
+
+    try {
+      const selected = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, slots);
+      const now = getSeoulDateTimeParts();
+      const photos = await Promise.all(selected.map((file) => createPhotoFromFile(file, now.iso)));
+      setDraft((current) => ({ ...current, photos: [...(current.photos ?? []), ...photos] }));
+      setStatus({ type: 'success', text: `${photos.length}장 사진을 추가했습니다.` });
+    } catch {
+      setStatus({ type: 'error', text: '사진을 읽거나 줄이는 중 문제가 생겼습니다.' });
+    }
+  }
+
+  function updatePhotoCaption(id: string, caption: string) {
+    setDraft((current) => ({
+      ...current,
+      photos: (current.photos ?? []).map((photo) => (photo.id === id ? { ...photo, caption } : photo)),
+    }));
+  }
+
+  function removePhoto(id: string) {
+    setDraft((current) => ({ ...current, photos: (current.photos ?? []).filter((photo) => photo.id !== id) }));
+  }
+
   function toggleArea(area: BodyArea) {
     setDraft((current) => ({
       ...current,
@@ -114,6 +149,7 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
         nextExpectedInjectionDate: getNextHumiraDate(draft.humira.actualInjectionDate, settings.humiraIntervalDays),
       },
       updatedAt: now.iso,
+      photos: draft.photos ?? [],
     };
     onSave(record);
     setDraft(createDraft(null));
@@ -188,6 +224,23 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
         {showNotice && <p className="medical-notice">감염 또는 안과 질환 가능성이 있으므로 휴미라 사용 사실을 알리고 의료진에게 문의하세요.</p>}
       </fieldset>
 
+      <fieldset className="section-card">
+        <legend>상처부위 사진</legend>
+        <p className="help-text">사진은 자동으로 줄여서 저장합니다. 기록당 최대 {MAX_PHOTOS_PER_RECORD}장까지 추가할 수 있습니다.</p>
+        <label className="file-label">사진 선택<input type="file" accept="image/*" multiple onChange={(event) => void addPhotos(event.target.files)} /></label>
+        {(draft.photos ?? []).length > 0 && (
+          <div className="photo-grid">
+            {(draft.photos ?? []).map((photo) => (
+              <div className="photo-item" key={photo.id}>
+                <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                <input type="text" value={photo.caption} placeholder="사진 메모" onChange={(event) => updatePhotoCaption(photo.id, event.target.value)} />
+                <button type="button" className="secondary-button" onClick={() => removePhoto(photo.id)}>사진 삭제</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </fieldset>
+
       <button type="button" className="wide-button" onClick={() => setShowMore((value) => !value)}>
         {showMore ? '추가 항목 닫기' : '추가 항목 보기'}
       </button>
@@ -248,6 +301,44 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
       <button type="button" className="primary-button" onClick={handleSave}>{editingRecord ? '수정 저장' : '기록 저장'}</button>
     </section>
   );
+}
+
+async function createPhotoFromFile(file: File, createdAt: string): Promise<WoundPhoto> {
+  const image = await loadImage(file);
+  const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas is not available');
+  context.drawImage(image, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY);
+  return {
+    id: createId('photo'),
+    dataUrl,
+    mimeType: 'image/jpeg',
+    name: file.name,
+    caption: '',
+    createdAt,
+  };
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Image load failed'));
+    };
+    image.src = url;
+  });
 }
 
 function ScoreInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {

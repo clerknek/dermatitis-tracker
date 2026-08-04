@@ -348,6 +348,43 @@ dd {
   margin-bottom: 0;
 }
 
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.photo-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.photo-item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.photo-item img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  border: 1px solid #d2ded6;
+  object-fit: cover;
+  background: #f5f8f5;
+}
+
+.photo-item figcaption {
+  overflow-wrap: anywhere;
+  color: #53645e;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.photo-item.readonly {
+  margin: 0;
+}
+
 .inline-actions.right {
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -492,6 +529,7 @@ svg {
   }
 
   .chip-grid,
+  .photo-grid,
   .stats-grid {
     grid-template-columns: 1fr;
   }

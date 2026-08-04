@@ -25,6 +25,9 @@ const medicationKeys = ['elidel', 'maxidex', 'whitePetrolatum', 'occipitalLiquid
 const lifestyleNumberKeys = ['sleepSatisfaction', 'fatigue', 'stress'];
 const lifestyleBooleanKeys = ['longScreenTime', 'exercised', 'sweatedMuch', 'hotWaterWash', 'alcohol', 'lateSnack', 'longOutdoorTime', 'dryIndoorAir', 'seasonalChange', 'rubbedOrScratched'];
 const careBooleanKeys = ['washedHair', 'newProductUsed', 'moisturizerUsed', 'whitePetrolatumUsed'];
+const maxPhotosPerRecord = 6;
+const maxPhotoDataUrlLength = 2_500_000;
+const maxJsonBodyLength = 16_000_000;
 
 mkdirSync(dirname(dbPath), { recursive: true });
 
@@ -112,8 +115,9 @@ async function handleDataApi(request, response) {
       sendJson(response, 400, { error: 'Invalid app data' });
       return;
     }
-    saveState.run(JSON.stringify(data));
-    sendJson(response, 200, data);
+    const normalizedData = normalizeAppData(data);
+    saveState.run(JSON.stringify(normalizedData));
+    sendJson(response, 200, normalizedData);
     return;
   }
 
@@ -134,11 +138,12 @@ async function handleRecordApi(request, response, id) {
       return;
     }
 
+    const normalizedRecord = normalizeRecord(record);
     const currentData = loadData();
     const exists = currentData.records.some((item) => item.id === id);
     const nextData = {
       ...currentData,
-      records: exists ? currentData.records.map((item) => (item.id === id ? record : item)) : [...currentData.records, record],
+      records: exists ? currentData.records.map((item) => (item.id === id ? normalizedRecord : item)) : [...currentData.records, normalizedRecord],
     };
     saveState.run(JSON.stringify(nextData));
     sendJson(response, 200, nextData);
@@ -170,7 +175,7 @@ function loadDataResult() {
 
   try {
     const parsed = JSON.parse(row.data);
-    return { data: isValidAppData(parsed) ? parsed : defaultData, exists: true };
+    return { data: isValidAppData(parsed) ? normalizeAppData(parsed) : defaultData, exists: true };
   } catch {
     return { data: defaultData, exists: true };
   }
@@ -212,7 +217,42 @@ function isValidRecord(value) {
     typeof value.humira.used === 'boolean' &&
     typeof value.humira.actualInjectionDate === 'string' &&
     (typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null) &&
-    typeof value.humira.nextExpectedInjectionDate === 'string'
+    typeof value.humira.nextExpectedInjectionDate === 'string' &&
+    (value.photos === undefined || hasValidPhotos(value.photos))
+  );
+}
+
+function normalizeAppData(value) {
+  return {
+    ...value,
+    records: value.records.map(normalizeRecord),
+  };
+}
+
+function normalizeRecord(value) {
+  return {
+    ...value,
+    photos: Array.isArray(value.photos) ? value.photos : [],
+  };
+}
+
+function hasValidPhotos(value) {
+  return (
+    Array.isArray(value) &&
+    value.length <= maxPhotosPerRecord &&
+    value.every((photo) =>
+      photo &&
+      typeof photo === 'object' &&
+      typeof photo.id === 'string' &&
+      typeof photo.dataUrl === 'string' &&
+      /^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) &&
+      photo.dataUrl.length <= maxPhotoDataUrlLength &&
+      typeof photo.mimeType === 'string' &&
+      ['image/jpeg', 'image/png', 'image/webp'].includes(photo.mimeType) &&
+      typeof photo.name === 'string' &&
+      typeof photo.caption === 'string' &&
+      typeof photo.createdAt === 'string'
+    )
   );
 }
 
@@ -230,7 +270,7 @@ function readJsonBody(request) {
     request.setEncoding('utf8');
     request.on('data', (chunk) => {
       body += chunk;
-      if (body.length > 2_000_000) {
+      if (body.length > maxJsonBodyLength) {
         reject(new Error('Request body too large'));
         request.destroy();
       }

@@ -25,6 +25,7 @@ function makeRecord(overrides: Partial<DermatitisRecord> = {}): DermatitisRecord
     care: createEmptyCare(),
     medications: createEmptyMedications(),
     humira: createEmptyHumira(),
+    photos: [],
     memo: '',
     createdAt: '2026-07-20T00:30:00.000Z',
     updatedAt: '2026-07-20T00:30:00.000Z',
@@ -63,6 +64,36 @@ describe('storage validation', () => {
     const record = makeRecord();
     const data: AppData = { ...createEmptyData(), records: [{ ...record, lifestyle: { previousNightSleepHours: 7 } } as DermatitisRecord] };
     expect(validateAppData(data).ok).toBe(false);
+  });
+
+  it('normalizes old records without photos', () => {
+    const { photos: _photos, ...recordWithoutPhotos } = makeRecord();
+    const data = { ...createEmptyData(), records: [recordWithoutPhotos] };
+    const result = validateAppData(data);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.records[0]?.photos).toEqual([]);
+  });
+
+  it('validates wound photos on records', () => {
+    const data: AppData = {
+      ...createEmptyData(),
+      records: [
+        makeRecord({
+          photos: [{
+            id: 'photo-1',
+            dataUrl: 'data:image/jpeg;base64,AAAA',
+            mimeType: 'image/jpeg',
+            name: 'wound.jpg',
+            caption: 'left eye',
+            createdAt: '2026-07-20T00:30:00.000Z',
+          }],
+        }),
+      ],
+    };
+
+    expect(validateAppData(data).ok).toBe(true);
+    expect(validateAppData({ ...data, records: [makeRecord({ photos: [{ id: 'bad', dataUrl: 'not-image', mimeType: 'text/plain', name: '', caption: '', createdAt: '' }] })] }).ok).toBe(false);
   });
 
   it('saves and loads data through localStorage', () => {
