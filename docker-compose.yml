@@ -8,6 +8,7 @@ services:
     environment:
       DB_PATH: /data/dermatitis-tracker.sqlite
       PHOTOS_DIR: /data/photos
+      APP_PIN: ${APP_PIN:-}
     volumes:
       - dermatitis-tracker-data:/data
     restart: unless-stopped

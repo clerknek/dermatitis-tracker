@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 ENV PORT=80
 ENV DB_PATH=/data/dermatitis-tracker.sqlite
 ENV PHOTOS_DIR=/data/photos
+ENV APP_PIN=
 
 COPY server ./server
 COPY --from=build /app/dist ./dist

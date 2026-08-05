@@ -64,6 +64,18 @@ dermatitis-tracker-data:/data
 ```
 
 기본 SQLite 파일 위치는 컨테이너 내부 `/data/dermatitis-tracker.sqlite`입니다.
+상처부위 사진 파일은 컨테이너 내부 `/data/photos`에 저장됩니다.
+
+## 접근 보호
+
+기본값으로는 별도 로그인 없이 접속됩니다. Tailscale 내부에서도 간단한 접근 보호를 켜고 싶으면 실행 전에 `APP_PIN` 환경변수를 설정하세요.
+
+```powershell
+$env:APP_PIN = "원하는-PIN"
+docker compose up -d --build
+```
+
+`APP_PIN`이 설정되면 브라우저가 기본 인증 창을 띄웁니다. 사용자 이름은 아무 값이나 입력해도 되고, 비밀번호에 설정한 PIN을 입력하면 됩니다.
 
 ## 테스트 방법
 
@@ -110,8 +122,10 @@ CSV에는 사진 원본 데이터가 들어가지 않고 사진 개수와 사진
 실행 중인 컨테이너의 `/data` 폴더를 압축 파일로 백업할 수 있습니다.
 
 ```powershell
-docker run --rm -v dermatitis-tracker-data:/data -v ${PWD}:/backup alpine tar czf /backup/dermatitis-tracker-data.tar.gz -C /data .
+.\scripts\backup-volume.ps1
 ```
+
+백업 파일은 기본적으로 `backups/dermatitis-tracker-data-YYYYMMDD-HHMMSS.tar.gz` 형식으로 생성됩니다.
 
 복원은 기존 볼륨 내용을 교체하는 작업이므로, 실행 중인 컨테이너를 중지하고 현재 데이터를 별도로 보관한 뒤 진행하세요.
 

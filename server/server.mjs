@@ -10,6 +10,7 @@ const publicDir = join(__dirname, '..', 'dist');
 const dbPath = process.env.DB_PATH ?? '/data/dermatitis-tracker.sqlite';
 const photosDir = process.env.PHOTOS_DIR ?? '/data/photos';
 const port = Number(process.env.PORT ?? 80);
+const appPin = process.env.APP_PIN ?? '';
 
 const defaultData = {
   storageVersion: 1,
@@ -103,6 +104,11 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/api/health') {
       sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (appPin && !isAuthorized(request)) {
+      sendAuthChallenge(response);
       return;
     }
 
@@ -492,4 +498,27 @@ function sendJson(response, statusCode, data, headers = {}) {
     ...headers,
   });
   response.end(JSON.stringify(data));
+}
+
+function isAuthorized(request) {
+  const header = request.headers.authorization ?? '';
+  if (!header.startsWith('Basic ')) return false;
+
+  try {
+    const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
+    const separatorIndex = decoded.indexOf(':');
+    if (separatorIndex === -1) return false;
+    return decoded.slice(separatorIndex + 1) === appPin;
+  } catch {
+    return false;
+  }
+}
+
+function sendAuthChallenge(response) {
+  response.writeHead(401, {
+    'WWW-Authenticate': 'Basic realm="Dermatitis Tracker"',
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-cache',
+  });
+  response.end('Authentication required');
 }
