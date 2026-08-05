@@ -93,6 +93,7 @@ describe('storage validation', () => {
     };
 
     expect(validateAppData(data).ok).toBe(true);
+    expect(validateAppData({ ...data, records: [makeRecord({ photos: [{ id: 'photo-2', dataUrl: '/api/photos/photo-2.jpg', mimeType: 'image/jpeg', name: 'wound.jpg', caption: 'left eye', createdAt: '2026-07-20T00:30:00.000Z' }] })] }).ok).toBe(true);
     expect(validateAppData({ ...data, records: [makeRecord({ photos: [{ id: 'bad', dataUrl: 'not-image', mimeType: 'text/plain', name: '', caption: '', createdAt: '' }] })] }).ok).toBe(false);
   });
 

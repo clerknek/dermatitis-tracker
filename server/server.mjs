@@ -1,13 +1,14 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname, extname, join, normalize } from 'node:path';
+import { basename, dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, '..', 'dist');
 const dbPath = process.env.DB_PATH ?? '/data/dermatitis-tracker.sqlite';
+const photosDir = process.env.PHOTOS_DIR ?? '/data/photos';
 const port = Number(process.env.PORT ?? 80);
 
 const defaultData = {
@@ -30,6 +31,7 @@ const maxPhotoDataUrlLength = 2_500_000;
 const maxJsonBodyLength = 16_000_000;
 
 mkdirSync(dirname(dbPath), { recursive: true });
+mkdirSync(photosDir, { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 db.exec(`
@@ -76,7 +78,12 @@ const server = createServer(async (request, response) => {
     }
 
     if (url.pathname === '/api/data') {
-      await handleDataApi(request, response);
+      await handleDataApi(request, response, url);
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/photos/')) {
+      await handlePhotoApi(request, response, decodeURIComponent(url.pathname.slice('/api/photos/'.length)));
       return;
     }
 
@@ -102,9 +109,13 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`sqlite database: ${dbPath}`);
 });
 
-async function handleDataApi(request, response) {
+async function handleDataApi(request, response, url) {
   if (request.method === 'GET') {
     const result = loadDataResult();
+    if (url.searchParams.get('photos') === 'inline') {
+      sendJson(response, 200, await inlinePhotoData(result.data), { 'X-App-State-Exists': String(result.exists) });
+      return;
+    }
     sendJson(response, 200, result.data, { 'X-App-State-Exists': String(result.exists) });
     return;
   }
@@ -115,8 +126,9 @@ async function handleDataApi(request, response) {
       sendJson(response, 400, { error: 'Invalid app data' });
       return;
     }
-    const normalizedData = normalizeAppData(data);
+    const normalizedData = await persistPhotoFiles(normalizeAppData(data));
     saveState.run(JSON.stringify(normalizedData));
+    await pruneUnusedPhotos(normalizedData);
     sendJson(response, 200, normalizedData);
     return;
   }
@@ -138,7 +150,7 @@ async function handleRecordApi(request, response, id) {
       return;
     }
 
-    const normalizedRecord = normalizeRecord(record);
+    const normalizedRecord = (await persistPhotoFiles({ ...defaultData, records: [normalizeRecord(record)] })).records[0];
     const currentData = loadData();
     const exists = currentData.records.some((item) => item.id === id);
     const nextData = {
@@ -146,6 +158,7 @@ async function handleRecordApi(request, response, id) {
       records: exists ? currentData.records.map((item) => (item.id === id ? normalizedRecord : item)) : [...currentData.records, normalizedRecord],
     };
     saveState.run(JSON.stringify(nextData));
+    await pruneUnusedPhotos(nextData);
     sendJson(response, 200, nextData);
     return;
   }
@@ -157,12 +170,42 @@ async function handleRecordApi(request, response, id) {
       records: currentData.records.filter((record) => record.id !== id),
     };
     saveState.run(JSON.stringify(nextData));
+    await pruneUnusedPhotos(nextData);
     sendJson(response, 200, nextData);
     return;
   }
 
   response.writeHead(405, { Allow: 'PUT, DELETE' });
   response.end();
+}
+
+async function handlePhotoApi(request, response, filename) {
+  if (request.method !== 'GET') {
+    response.writeHead(405, { Allow: 'GET' });
+    response.end();
+    return;
+  }
+
+  const safeFilename = basename(filename);
+  if (!safeFilename || safeFilename !== filename) {
+    sendJson(response, 400, { error: 'Invalid photo path' });
+    return;
+  }
+
+  const filePath = join(photosDir, safeFilename);
+  if (!existsSync(filePath)) {
+    sendJson(response, 404, { error: 'Photo not found' });
+    return;
+  }
+
+  const extension = extname(filePath);
+  const contentType = mimeTypes[extension] ?? 'application/octet-stream';
+  const content = await readFile(filePath);
+  response.writeHead(200, {
+    'Content-Type': contentType,
+    'Cache-Control': 'private, max-age=31536000, immutable',
+  });
+  response.end(content);
 }
 
 function loadData() {
@@ -236,6 +279,72 @@ function normalizeRecord(value) {
   };
 }
 
+async function persistPhotoFiles(data) {
+  return {
+    ...data,
+    records: await Promise.all(data.records.map(async (record) => ({
+      ...record,
+      photos: await Promise.all((record.photos ?? []).map(savePhotoFile)),
+    }))),
+  };
+}
+
+async function savePhotoFile(photo) {
+  if (photo.dataUrl.startsWith('/api/photos/')) return photo;
+
+  const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(photo.dataUrl);
+  if (!match) return photo;
+
+  const extension = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const filename = `${sanitizePhotoId(photo.id)}.${extension}`;
+  await writeFile(join(photosDir, filename), Buffer.from(match[2], 'base64'));
+  return {
+    ...photo,
+    dataUrl: `/api/photos/${encodeURIComponent(filename)}`,
+  };
+}
+
+async function inlinePhotoData(data) {
+  return {
+    ...data,
+    records: await Promise.all(data.records.map(async (record) => ({
+      ...record,
+      photos: await Promise.all((record.photos ?? []).map(inlinePhoto)),
+    }))),
+  };
+}
+
+async function inlinePhoto(photo) {
+  if (!photo.dataUrl.startsWith('/api/photos/')) return photo;
+
+  const filename = basename(decodeURIComponent(photo.dataUrl.slice('/api/photos/'.length)));
+  const filePath = join(photosDir, filename);
+  if (!existsSync(filePath)) return photo;
+
+  const content = await readFile(filePath);
+  return {
+    ...photo,
+    dataUrl: `data:${photo.mimeType};base64,${content.toString('base64')}`,
+  };
+}
+
+async function pruneUnusedPhotos(data) {
+  const used = new Set(
+    data.records
+      .flatMap((record) => record.photos ?? [])
+      .map((photo) => photo.dataUrl.startsWith('/api/photos/') ? basename(decodeURIComponent(photo.dataUrl.slice('/api/photos/'.length))) : '')
+      .filter(Boolean)
+  );
+
+  for (const filename of await readdir(photosDir)) {
+    if (!used.has(filename)) await unlink(join(photosDir, filename));
+  }
+}
+
+function sanitizePhotoId(id) {
+  return id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || `photo-${Date.now()}`;
+}
+
 function hasValidPhotos(value) {
   return (
     Array.isArray(value) &&
@@ -245,7 +354,7 @@ function hasValidPhotos(value) {
       typeof photo === 'object' &&
       typeof photo.id === 'string' &&
       typeof photo.dataUrl === 'string' &&
-      /^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) &&
+      (/^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) || /^\/api\/photos\/[a-zA-Z0-9._~%-]+\.(jpg|jpeg|png|webp)$/.test(photo.dataUrl)) &&
       photo.dataUrl.length <= maxPhotoDataUrlLength &&
       typeof photo.mimeType === 'string' &&
       ['image/jpeg', 'image/png', 'image/webp'].includes(photo.mimeType) &&

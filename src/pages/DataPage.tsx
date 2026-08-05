@@ -9,8 +9,17 @@ export function DataPage({ data, onReplaceData }: { data: AppData; onReplaceData
   const [deleteText, setDeleteText] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  function exportJson() {
-    downloadFile(`dermatitis-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
+  async function exportJson() {
+    try {
+      const response = await fetch('/api/data?photos=inline', { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('Failed to export server data');
+      const serverData: unknown = await response.json();
+      const validation = validateAppData(serverData);
+      if (!validation.ok) throw new Error(validation.error);
+      downloadFile(`dermatitis-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(validation.data, null, 2), 'application/json');
+    } catch {
+      downloadFile(`dermatitis-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
+    }
     setMessage({ type: 'success', text: 'JSON 백업 파일을 내보냈습니다.' });
   }
 
@@ -63,7 +72,7 @@ export function DataPage({ data, onReplaceData }: { data: AppData; onReplaceData
 
       <div className="section-card action-card">
         <h3>내보내기</h3>
-        <button type="button" className="primary-button" onClick={exportJson}>전체 데이터를 JSON 파일로 내보내기</button>
+        <button type="button" className="primary-button" onClick={() => void exportJson()}>전체 데이터를 JSON 파일로 내보내기</button>
         <button type="button" className="secondary-button" onClick={exportCsv}>전체 기록을 CSV 파일로 내보내기</button>
       </div>
 

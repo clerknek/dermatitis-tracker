@@ -227,7 +227,7 @@ function hasValidPhotos(value: unknown): value is WoundPhoto[] {
       isObject(photo) &&
       typeof photo.id === 'string' &&
       typeof photo.dataUrl === 'string' &&
-      /^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) &&
+      (/^data:image\/(jpeg|png|webp);base64,/.test(photo.dataUrl) || /^\/api\/photos\/[a-zA-Z0-9._~%-]+\.(jpg|jpeg|png|webp)$/.test(photo.dataUrl)) &&
       photo.dataUrl.length <= MAX_PHOTO_DATA_URL_LENGTH &&
       typeof photo.mimeType === 'string' &&
       ['image/jpeg', 'image/png', 'image/webp'].includes(photo.mimeType) &&
