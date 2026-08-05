@@ -48,12 +48,18 @@ function App() {
       };
     });
     setEditingRecord(null);
-    void upsertPersistedRecord(record).then(setIsServerBacked);
+    void upsertPersistedRecord(record).then((result) => {
+      setIsServerBacked(result.serverBacked);
+      if (result.serverBacked) setData(result.data);
+    });
   }
 
   function deleteRecord(id: string) {
     setData((current) => ({ ...current, records: current.records.filter((record) => record.id !== id) }));
-    void deletePersistedRecord(id).then(setIsServerBacked);
+    void deletePersistedRecord(id).then((result) => {
+      setIsServerBacked(result.serverBacked);
+      if (result.serverBacked) setData(result.data);
+    });
   }
 
   function startEdit(record: DermatitisRecord) {
@@ -64,7 +70,10 @@ function App() {
   function replaceData(nextData: AppData) {
     setData(nextData);
     setEditingRecord(null);
-    void replacePersistedAppData(nextData).then(setIsServerBacked);
+    void replacePersistedAppData(nextData).then((result) => {
+      setIsServerBacked(result.serverBacked);
+      if (result.serverBacked) setData(result.data);
+    });
   }
 
   return (

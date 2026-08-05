@@ -67,6 +67,7 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
                 <div><dt>사용한 약</dt><dd>{medications.length > 0 ? medications.join(', ') : '없음'}</dd></div>
                 <div><dt>휴미라</dt><dd>{record.humira.used ? `투여 (${record.humira.actualInjectionDate || '날짜 미입력'})` : '투여 안 함'}</dd></div>
                 <div><dt>사진</dt><dd>{record.photos?.length ? `${record.photos.length}장` : '없음'}</dd></div>
+                <div><dt>날씨</dt><dd>{formatWeatherSummary(record)}</dd></div>
               </dl>
               {isOpen && (
                 <div className="detail-box">
@@ -79,6 +80,7 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
                   <p><strong>관리 체크</strong> {getActiveLabels(record.care, CARE_BOOLEAN_LABELS).join(', ') || '없음'}</p>
                   <p><strong>다음 휴미라 예상일</strong> {record.humira.nextExpectedInjectionDate || '-'}</p>
                   <p><strong>약 항목</strong> {Object.entries(record.medications).filter(([, used]) => used).map(([key]) => MEDICATION_LABELS[key as keyof typeof MEDICATION_LABELS]).join(', ') || '없음'}</p>
+                  <p><strong>저장 당시 날씨</strong> {formatWeatherDetail(record)}</p>
                   {(record.photos?.length ?? 0) > 0 && (
                     <div className="photo-grid compact">
                       {record.photos.map((photo) => (
@@ -102,4 +104,29 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
       </div>
     </section>
   );
+}
+
+function formatWeatherSummary(record: DermatitisRecord): string {
+  const weather = record.weather;
+  if (!weather) return '없음';
+  if (weather.status !== 'captured') return '저장 실패';
+  return `${formatNullable(weather.temperatureC, '°C')} · 습도 ${formatNullable(weather.humidityPercent, '%')}`;
+}
+
+function formatWeatherDetail(record: DermatitisRecord): string {
+  const weather = record.weather;
+  if (!weather) return '없음';
+  if (weather.status !== 'captured') return '날씨 API 호출 실패';
+  return [
+    `기온 ${formatNullable(weather.temperatureC, '°C')}`,
+    `체감 ${formatNullable(weather.apparentTemperatureC, '°C')}`,
+    `습도 ${formatNullable(weather.humidityPercent, '%')}`,
+    `강수 ${formatNullable(weather.precipitationMm, 'mm')}`,
+    `기압 ${formatNullable(weather.pressureHpa, 'hPa')}`,
+    `풍속 ${formatNullable(weather.windSpeedMps, 'm/s')}`,
+  ].join(' · ');
+}
+
+function formatNullable(value: number | null, suffix: string): string {
+  return value === null ? '-' : `${value}${suffix}`;
 }

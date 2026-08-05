@@ -33,6 +33,7 @@ function createDraft(editingRecord: DermatitisRecord | null): DermatitisRecord {
     medications: createEmptyMedications(),
     humira: createEmptyHumira(),
     photos: [],
+    weather: null,
     memo: '',
     createdAt: now.iso,
     updatedAt: now.iso,

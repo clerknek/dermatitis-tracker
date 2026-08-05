@@ -8,6 +8,7 @@
 - 기록 목록: 최신순 정렬, 날짜/부위 필터, 상세 펼쳐보기, 수정, 삭제
 - 통계: 최근 7일/30일 기록 수, 평균 점수, 수면/피로/스트레스 평균, 주요 날짜, SVG 추이 그래프, 단순 패턴 문구
 - 데이터 관리: JSON 백업 내보내기/가져오기, CSV 내보내기, DELETE 확인 후 전체 삭제
+- 날씨 기록: 저장 시점의 현재 날씨를 Open-Meteo API로 조회해 기록과 함께 저장
 - 저장 방식: Docker 실행 시 SQLite 데이터베이스에 저장하고, 브라우저 localStorage에는 백업 사본 유지
 
 ## 기술 구성
@@ -20,6 +21,7 @@
 - Node.js HTTP API
 - SQLite
 - Docker Compose named volume
+- Open-Meteo weather API
 - localStorage 백업
 - CSS/SVG 기반 경량 UI와 그래프
 
@@ -76,6 +78,21 @@ docker compose up -d --build
 ```
 
 `APP_PIN`이 설정되면 브라우저가 기본 인증 창을 띄웁니다. 사용자 이름은 아무 값이나 입력해도 되고, 비밀번호에 설정한 PIN을 입력하면 됩니다.
+
+## 날씨 저장
+
+Docker 실행 환경에서는 기록을 저장할 때 서버가 Open-Meteo API에서 현재 날씨를 조회해 함께 저장합니다. API 호출이 실패해도 증상 기록 저장은 계속되고, 해당 기록의 날씨 상태만 실패로 남습니다.
+
+기본 위치는 서울입니다. 다른 위치를 쓰려면 실행 전에 아래 환경변수를 설정하세요.
+
+```powershell
+$env:WEATHER_LAT = "37.5665"
+$env:WEATHER_LON = "126.978"
+$env:WEATHER_TIMEZONE = "Asia/Seoul"
+docker compose up -d --build
+```
+
+날씨 저장을 끄려면 `WEATHER_ENABLED=false`로 실행합니다.
 
 ## 테스트 방법
 

@@ -1,5 +1,5 @@
 ﻿import { BODY_AREAS, MEDICATION_KEYS, STORAGE_VERSION, SYMPTOM_KEYS, WARNING_KEYS } from '../types/record';
-import type { AppData, AppSettings, BodyArea, CareLog, DermatitisRecord, HumiraLog, LifestyleLog, MedicationUsage, SymptomScores, WarningSigns, WoundPhoto } from '../types/record';
+import type { AppData, AppSettings, BodyArea, CareLog, DermatitisRecord, HumiraLog, LifestyleLog, MedicationUsage, SymptomScores, WarningSigns, WeatherSnapshot, WoundPhoto } from '../types/record';
 
 const STORAGE_KEY = 'dermatitis-tracker:data';
 const MAX_PHOTOS_PER_RECORD = 6;
@@ -100,7 +100,7 @@ export async function loadPersistedAppData(storage: Storage = localStorage): Pro
     const serverHasState = response.headers.get('x-app-state-exists') === 'true';
     if (!serverHasState && validation.data.records.length === 0 && localData.records.length > 0) {
       const migrated = await replacePersistedAppData(localData, storage);
-      return { data: localData, serverBacked: migrated };
+      return migrated;
     }
 
     saveAppData(validation.data, storage);
@@ -110,7 +110,7 @@ export async function loadPersistedAppData(storage: Storage = localStorage): Pro
   }
 }
 
-export async function replacePersistedAppData(data: AppData, storage: Storage = localStorage): Promise<boolean> {
+export async function replacePersistedAppData(data: AppData, storage: Storage = localStorage): Promise<{ data: AppData; serverBacked: boolean }> {
   saveAppData(data, storage);
 
   try {
@@ -122,13 +122,18 @@ export async function replacePersistedAppData(data: AppData, storage: Storage = 
       },
       body: JSON.stringify(data),
     });
-    return response.ok;
+    if (!response.ok) return { data, serverBacked: false };
+    const parsed: unknown = await response.json();
+    const validation = validateAppData(parsed);
+    if (!validation.ok) return { data, serverBacked: false };
+    saveAppData(validation.data, storage);
+    return { data: validation.data, serverBacked: true };
   } catch {
-    return false;
+    return { data, serverBacked: false };
   }
 }
 
-export async function upsertPersistedRecord(record: DermatitisRecord, storage: Storage = localStorage): Promise<boolean> {
+export async function upsertPersistedRecord(record: DermatitisRecord, storage: Storage = localStorage): Promise<{ data: AppData; serverBacked: boolean }> {
   const localData = loadAppData(storage);
   const exists = localData.records.some((item) => item.id === record.id);
   const nextData: AppData = {
@@ -146,24 +151,35 @@ export async function upsertPersistedRecord(record: DermatitisRecord, storage: S
       },
       body: JSON.stringify(record),
     });
-    return response.ok;
+    if (!response.ok) return { data: nextData, serverBacked: false };
+    const parsed: unknown = await response.json();
+    const validation = validateAppData(parsed);
+    if (!validation.ok) return { data: nextData, serverBacked: false };
+    saveAppData(validation.data, storage);
+    return { data: validation.data, serverBacked: true };
   } catch {
-    return false;
+    return { data: nextData, serverBacked: false };
   }
 }
 
-export async function deletePersistedRecord(id: string, storage: Storage = localStorage): Promise<boolean> {
+export async function deletePersistedRecord(id: string, storage: Storage = localStorage): Promise<{ data: AppData; serverBacked: boolean }> {
   const localData = loadAppData(storage);
-  saveAppData({ ...localData, records: localData.records.filter((record) => record.id !== id) }, storage);
+  const nextData = { ...localData, records: localData.records.filter((record) => record.id !== id) };
+  saveAppData(nextData, storage);
 
   try {
     const response = await fetch(`/api/records/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
     });
-    return response.ok;
+    if (!response.ok) return { data: nextData, serverBacked: false };
+    const parsed: unknown = await response.json();
+    const validation = validateAppData(parsed);
+    if (!validation.ok) return { data: nextData, serverBacked: false };
+    saveAppData(validation.data, storage);
+    return { data: validation.data, serverBacked: true };
   } catch {
-    return false;
+    return { data: nextData, serverBacked: false };
   }
 }
 
@@ -208,6 +224,7 @@ export function validateRecord(value: unknown): { ok: true } | { ok: false; erro
   if (!isObject(value.humira) || typeof value.humira.used !== 'boolean' || typeof value.humira.actualInjectionDate !== 'string' || typeof value.humira.nextExpectedInjectionDate !== 'string') return { ok: false, error: '휴미라 기록 구조가 올바르지 않습니다.' };
   if (!(typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null)) return { ok: false, error: '휴미라 경과 일수 구조가 올바르지 않습니다.' };
   if (value.photos !== undefined && !hasValidPhotos(value.photos)) return { ok: false, error: '사진 기록 구조가 올바르지 않습니다.' };
+  if (value.weather !== undefined && value.weather !== null && !hasValidWeather(value.weather)) return { ok: false, error: '날씨 기록 구조가 올바르지 않습니다.' };
   return { ok: true };
 }
 
@@ -216,7 +233,27 @@ function normalizeRecord(value: unknown): DermatitisRecord {
   return {
     ...record,
     photos: Array.isArray(record.photos) ? record.photos : [],
+    weather: record.weather ?? null,
   };
+}
+
+function hasValidWeather(value: unknown): value is WeatherSnapshot {
+  return (
+    isObject(value) &&
+    (value.status === 'captured' || value.status === 'unavailable') &&
+    typeof value.capturedAt === 'string' &&
+    typeof value.source === 'string' &&
+    typeof value.latitude === 'number' &&
+    typeof value.longitude === 'number' &&
+    typeof value.timezone === 'string' &&
+    isNullableNumber(value.temperatureC) &&
+    isNullableNumber(value.apparentTemperatureC) &&
+    isNullableNumber(value.humidityPercent) &&
+    isNullableNumber(value.precipitationMm) &&
+    isNullableNumber(value.pressureHpa) &&
+    isNullableNumber(value.windSpeedMps) &&
+    isNullableNumber(value.weatherCode)
+  );
 }
 
 function hasValidPhotos(value: unknown): value is WoundPhoto[] {
@@ -248,5 +285,9 @@ function hasBooleanMap(value: unknown, keys: string[]): boolean {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return typeof value === 'number' || value === null;
 }
 

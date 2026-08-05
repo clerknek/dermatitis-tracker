@@ -26,6 +26,7 @@ function makeRecord(overrides: Partial<DermatitisRecord> = {}): DermatitisRecord
     medications: createEmptyMedications(),
     humira: createEmptyHumira(),
     photos: [],
+    weather: null,
     memo: '',
     createdAt: '2026-07-20T00:30:00.000Z',
     updatedAt: '2026-07-20T00:30:00.000Z',
@@ -67,12 +68,43 @@ describe('storage validation', () => {
   });
 
   it('normalizes old records without photos', () => {
-    const { photos: _photos, ...recordWithoutPhotos } = makeRecord();
+    const { photos: _photos, weather: _weather, ...recordWithoutPhotos } = makeRecord();
     const data = { ...createEmptyData(), records: [recordWithoutPhotos] };
     const result = validateAppData(data);
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.records[0]?.photos).toEqual([]);
+    if (result.ok) {
+      expect(result.data.records[0]?.photos).toEqual([]);
+      expect(result.data.records[0]?.weather).toBeNull();
+    }
+  });
+
+  it('validates captured weather snapshots on records', () => {
+    const data: AppData = {
+      ...createEmptyData(),
+      records: [
+        makeRecord({
+          weather: {
+            status: 'captured',
+            capturedAt: '2026-07-20T00:30:00.000Z',
+            source: 'open-meteo',
+            latitude: 37.5665,
+            longitude: 126.978,
+            timezone: 'Asia/Seoul',
+            temperatureC: 28,
+            apparentTemperatureC: 30,
+            humidityPercent: 70,
+            precipitationMm: 0,
+            pressureHpa: 1008,
+            windSpeedMps: 2,
+            weatherCode: 1,
+          },
+        }),
+      ],
+    };
+
+    expect(validateAppData(data).ok).toBe(true);
+    expect(validateAppData({ ...data, records: [makeRecord({ weather: { status: 'captured', temperatureC: 'hot' } as never })] }).ok).toBe(false);
   });
 
   it('validates wound photos on records', () => {

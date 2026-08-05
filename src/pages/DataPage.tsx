@@ -130,6 +130,16 @@ function buildCsv(records: DermatitisRecord[]): string {
     'humiraDate',
     'humiraDaysSinceLastInjection',
     'humiraNextExpectedInjectionDate',
+    'weatherStatus',
+    'weatherCapturedAt',
+    'weatherSource',
+    'weatherTemperatureC',
+    'weatherApparentTemperatureC',
+    'weatherHumidityPercent',
+    'weatherPrecipitationMm',
+    'weatherPressureHpa',
+    'weatherWindSpeedMps',
+    'weatherCode',
     'photoCount',
     'photoCaptions',
     'memo',
@@ -151,6 +161,16 @@ function buildCsv(records: DermatitisRecord[]): string {
     record.humira.actualInjectionDate,
     record.humira.daysSinceLastInjection === null ? '' : String(record.humira.daysSinceLastInjection),
     record.humira.nextExpectedInjectionDate,
+    record.weather?.status ?? '',
+    record.weather?.capturedAt ?? '',
+    record.weather?.source ?? '',
+    nullableCsv(record.weather?.temperatureC),
+    nullableCsv(record.weather?.apparentTemperatureC),
+    nullableCsv(record.weather?.humidityPercent),
+    nullableCsv(record.weather?.precipitationMm),
+    nullableCsv(record.weather?.pressureHpa),
+    nullableCsv(record.weather?.windSpeedMps),
+    nullableCsv(record.weather?.weatherCode),
     String(record.photos?.length ?? 0),
     (record.photos ?? []).map((photo) => photo.caption || photo.name).join('|'),
     record.memo,
@@ -158,6 +178,10 @@ function buildCsv(records: DermatitisRecord[]): string {
     record.updatedAt,
   ]);
   return [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+}
+
+function nullableCsv(value: number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function escapeCsv(value: string): string {

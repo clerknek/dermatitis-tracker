@@ -11,6 +11,10 @@ const dbPath = process.env.DB_PATH ?? '/data/dermatitis-tracker.sqlite';
 const photosDir = process.env.PHOTOS_DIR ?? '/data/photos';
 const port = Number(process.env.PORT ?? 80);
 const appPin = process.env.APP_PIN ?? '';
+const weatherLatitude = Number(process.env.WEATHER_LAT ?? 37.5665);
+const weatherLongitude = Number(process.env.WEATHER_LON ?? 126.978);
+const weatherTimezone = process.env.WEATHER_TIMEZONE ?? 'Asia/Seoul';
+const weatherEnabled = process.env.WEATHER_ENABLED !== 'false' && Number.isFinite(weatherLatitude) && Number.isFinite(weatherLongitude);
 
 const defaultData = {
   storageVersion: 1,
@@ -30,6 +34,7 @@ const careBooleanKeys = ['washedHair', 'newProductUsed', 'moisturizerUsed', 'whi
 const maxPhotosPerRecord = 6;
 const maxPhotoDataUrlLength = 2_500_000;
 const maxJsonBodyLength = 16_000_000;
+const weatherSource = 'open-meteo';
 
 mkdirSync(dirname(dbPath), { recursive: true });
 mkdirSync(photosDir, { recursive: true });
@@ -187,7 +192,8 @@ async function handleRecordApi(request, response, id) {
       return;
     }
 
-    const normalizedRecord = (await persistPhotoFiles({ ...defaultData, records: [normalizeRecord(record)] })).records[0];
+    const recordWithWeather = await attachWeatherSnapshot(normalizeRecord(record));
+    const normalizedRecord = (await persistPhotoFiles({ ...defaultData, records: [recordWithWeather] })).records[0];
     const currentData = loadData();
     const exists = currentData.records.some((item) => item.id === id);
     const nextData = {
@@ -340,7 +346,8 @@ function isValidRecord(value) {
     typeof value.humira.actualInjectionDate === 'string' &&
     (typeof value.humira.daysSinceLastInjection === 'number' || value.humira.daysSinceLastInjection === null) &&
     typeof value.humira.nextExpectedInjectionDate === 'string' &&
-    (value.photos === undefined || hasValidPhotos(value.photos))
+    (value.photos === undefined || hasValidPhotos(value.photos)) &&
+    (value.weather === undefined || value.weather === null || hasValidWeather(value.weather))
   );
 }
 
@@ -355,6 +362,87 @@ function normalizeRecord(value) {
   return {
     ...value,
     photos: Array.isArray(value.photos) ? value.photos : [],
+    weather: value.weather ?? null,
+  };
+}
+
+async function attachWeatherSnapshot(record) {
+  if (record.weather?.status === 'captured') return record;
+  return {
+    ...record,
+    weather: await fetchWeatherSnapshot(),
+  };
+}
+
+async function fetchWeatherSnapshot() {
+  const capturedAt = new Date().toISOString();
+
+  if (!weatherEnabled) {
+    return createUnavailableWeather(capturedAt);
+  }
+
+  const url = new URL('https://api.open-meteo.com/v1/forecast');
+  url.searchParams.set('latitude', String(weatherLatitude));
+  url.searchParams.set('longitude', String(weatherLongitude));
+  url.searchParams.set('timezone', weatherTimezone);
+  url.searchParams.set('wind_speed_unit', 'ms');
+  url.searchParams.set('current', [
+    'temperature_2m',
+    'relative_humidity_2m',
+    'apparent_temperature',
+    'precipitation',
+    'pressure_msl',
+    'wind_speed_10m',
+    'weather_code',
+  ].join(','));
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) throw new Error(`Weather API returned ${response.status}`);
+    const data = await response.json();
+    const current = data?.current ?? {};
+    return {
+      status: 'captured',
+      capturedAt,
+      source: weatherSource,
+      latitude: weatherLatitude,
+      longitude: weatherLongitude,
+      timezone: weatherTimezone,
+      temperatureC: numberOrNull(current.temperature_2m),
+      apparentTemperatureC: numberOrNull(current.apparent_temperature),
+      humidityPercent: numberOrNull(current.relative_humidity_2m),
+      precipitationMm: numberOrNull(current.precipitation),
+      pressureHpa: numberOrNull(current.pressure_msl),
+      windSpeedMps: numberOrNull(current.wind_speed_10m),
+      weatherCode: numberOrNull(current.weather_code),
+    };
+  } catch (error) {
+    console.error('weather capture failed', error);
+    return createUnavailableWeather(capturedAt);
+  }
+}
+
+function createUnavailableWeather(capturedAt) {
+  return {
+    status: 'unavailable',
+    capturedAt,
+    source: weatherSource,
+    latitude: weatherLatitude,
+    longitude: weatherLongitude,
+    timezone: weatherTimezone,
+    temperatureC: null,
+    apparentTemperatureC: null,
+    humidityPercent: null,
+    precipitationMm: null,
+    pressureHpa: null,
+    windSpeedMps: null,
+    weatherCode: null,
   };
 }
 
@@ -444,12 +532,40 @@ function hasValidPhotos(value) {
   );
 }
 
+function hasValidWeather(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    ['captured', 'unavailable'].includes(value.status) &&
+    typeof value.capturedAt === 'string' &&
+    typeof value.source === 'string' &&
+    typeof value.latitude === 'number' &&
+    typeof value.longitude === 'number' &&
+    typeof value.timezone === 'string' &&
+    isNullableNumber(value.temperatureC) &&
+    isNullableNumber(value.apparentTemperatureC) &&
+    isNullableNumber(value.humidityPercent) &&
+    isNullableNumber(value.precipitationMm) &&
+    isNullableNumber(value.pressureHpa) &&
+    isNullableNumber(value.windSpeedMps) &&
+    isNullableNumber(value.weatherCode)
+  );
+}
+
 function hasNumberMap(value, keys, min, max) {
   return value && typeof value === 'object' && keys.every((key) => typeof value[key] === 'number' && value[key] >= min && value[key] <= max);
 }
 
 function hasBooleanMap(value, keys) {
   return value && typeof value === 'object' && keys.every((key) => typeof value[key] === 'boolean');
+}
+
+function numberOrNull(value) {
+  return typeof value === 'number' ? value : null;
+}
+
+function isNullableNumber(value) {
+  return typeof value === 'number' || value === null;
 }
 
 function readJsonBody(request) {

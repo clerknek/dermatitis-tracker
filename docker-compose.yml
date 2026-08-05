@@ -9,6 +9,10 @@ services:
       DB_PATH: /data/dermatitis-tracker.sqlite
       PHOTOS_DIR: /data/photos
       APP_PIN: ${APP_PIN:-}
+      WEATHER_LAT: ${WEATHER_LAT:-37.5665}
+      WEATHER_LON: ${WEATHER_LON:-126.978}
+      WEATHER_TIMEZONE: ${WEATHER_TIMEZONE:-Asia/Seoul}
+      WEATHER_ENABLED: ${WEATHER_ENABLED:-true}
     volumes:
       - dermatitis-tracker-data:/data
     restart: unless-stopped

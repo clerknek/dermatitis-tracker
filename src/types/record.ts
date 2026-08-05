@@ -90,6 +90,22 @@ export interface WoundPhoto {
   createdAt: string;
 }
 
+export interface WeatherSnapshot {
+  status: 'captured' | 'unavailable';
+  capturedAt: string;
+  source: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  temperatureC: number | null;
+  apparentTemperatureC: number | null;
+  humidityPercent: number | null;
+  precipitationMm: number | null;
+  pressureHpa: number | null;
+  windSpeedMps: number | null;
+  weatherCode: number | null;
+}
+
 export interface DermatitisRecord {
   id: string;
   date: string;
@@ -102,6 +118,7 @@ export interface DermatitisRecord {
   medications: MedicationUsage;
   humira: HumiraLog;
   photos: WoundPhoto[];
+  weather: WeatherSnapshot | null;
   memo: string;
   createdAt: string;
   updatedAt: string;
