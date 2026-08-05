@@ -39,15 +39,44 @@ db.exec(`
     id INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS records (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    time TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   )
 `);
 
-const getState = db.prepare('SELECT data FROM app_state WHERE id = 1');
-const saveState = db.prepare(`
-  INSERT INTO app_state (id, data, updated_at)
+const getLegacyState = db.prepare('SELECT data FROM app_state WHERE id = 1');
+const getSettings = db.prepare('SELECT data FROM app_settings WHERE id = 1');
+const countSettings = db.prepare('SELECT COUNT(*) AS count FROM app_settings');
+const countRecords = db.prepare('SELECT COUNT(*) AS count FROM records');
+const listRecords = db.prepare('SELECT data FROM records ORDER BY date DESC, time DESC, updated_at DESC');
+const saveSettings = db.prepare(`
+  INSERT INTO app_settings (id, data, updated_at)
   VALUES (1, ?, datetime('now'))
   ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
 `);
+const saveRecord = db.prepare(`
+  INSERT INTO records (id, date, time, data, updated_at)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    date = excluded.date,
+    time = excluded.time,
+    data = excluded.data,
+    updated_at = excluded.updated_at
+`);
+const deleteRecordById = db.prepare('DELETE FROM records WHERE id = ?');
+const deleteAllRecords = db.prepare('DELETE FROM records');
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -104,6 +133,8 @@ const server = createServer(async (request, response) => {
   }
 });
 
+await migrateLegacyState();
+
 server.listen(port, '0.0.0.0', () => {
   console.log(`dermatitis-tracker listening on port ${port}`);
   console.log(`sqlite database: ${dbPath}`);
@@ -127,7 +158,7 @@ async function handleDataApi(request, response, url) {
       return;
     }
     const normalizedData = await persistPhotoFiles(normalizeAppData(data));
-    saveState.run(JSON.stringify(normalizedData));
+    saveAllData(normalizedData);
     await pruneUnusedPhotos(normalizedData);
     sendJson(response, 200, normalizedData);
     return;
@@ -157,7 +188,7 @@ async function handleRecordApi(request, response, id) {
       ...currentData,
       records: exists ? currentData.records.map((item) => (item.id === id ? normalizedRecord : item)) : [...currentData.records, normalizedRecord],
     };
-    saveState.run(JSON.stringify(nextData));
+    saveOneRecord(normalizedRecord);
     await pruneUnusedPhotos(nextData);
     sendJson(response, 200, nextData);
     return;
@@ -169,7 +200,7 @@ async function handleRecordApi(request, response, id) {
       ...currentData,
       records: currentData.records.filter((record) => record.id !== id),
     };
-    saveState.run(JSON.stringify(nextData));
+    deleteRecordById.run(id);
     await pruneUnusedPhotos(nextData);
     sendJson(response, 200, nextData);
     return;
@@ -213,15 +244,57 @@ function loadData() {
 }
 
 function loadDataResult() {
-  const row = getState.get();
-  if (!row) return { data: defaultData, exists: false };
+  const settingsRow = getSettings.get();
+  const recordRows = listRecords.all();
+  const exists = Boolean(settingsRow) || recordRows.length > 0;
+  if (!exists) return { data: defaultData, exists: false };
 
   try {
-    const parsed = JSON.parse(row.data);
+    const settings = settingsRow ? JSON.parse(settingsRow.data) : defaultData.settings;
+    const records = recordRows.map((row) => JSON.parse(row.data));
+    const parsed = {
+      storageVersion: defaultData.storageVersion,
+      settings,
+      records,
+    };
     return { data: isValidAppData(parsed) ? normalizeAppData(parsed) : defaultData, exists: true };
   } catch {
     return { data: defaultData, exists: true };
   }
+}
+
+async function migrateLegacyState() {
+  const alreadyMigrated = Number(countSettings.get().count) > 0 || Number(countRecords.get().count) > 0;
+  if (alreadyMigrated) return;
+
+  const row = getLegacyState.get();
+  if (!row) return;
+
+  try {
+    const parsed = JSON.parse(row.data);
+    if (!isValidAppData(parsed)) return;
+    const normalizedData = await persistPhotoFiles(normalizeAppData(parsed));
+    saveAllData(normalizedData);
+  } catch (error) {
+    console.error('legacy state migration failed', error);
+  }
+}
+
+function saveAllData(data) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    saveSettings.run(JSON.stringify(data.settings));
+    deleteAllRecords.run();
+    for (const record of data.records) saveOneRecord(record);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function saveOneRecord(record) {
+  saveRecord.run(record.id, record.date, record.time, JSON.stringify(record), record.updatedAt);
 }
 
 function isValidAppData(value) {
