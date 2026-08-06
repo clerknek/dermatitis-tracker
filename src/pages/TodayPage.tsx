@@ -14,7 +14,7 @@ const PHOTO_JPEG_QUALITY = 0.82;
 interface TodayPageProps {
   editingRecord: DermatitisRecord | null;
   settings: AppSettings;
-  onSave: (record: DermatitisRecord) => void;
+  onSave: (record: DermatitisRecord) => Promise<{ serverBacked: boolean }>;
   onCancelEdit: () => void;
 }
 
@@ -42,13 +42,13 @@ function createDraft(editingRecord: DermatitisRecord | null): DermatitisRecord {
 
 export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: TodayPageProps) {
   const [draft, setDraft] = useState<DermatitisRecord>(() => createDraft(editingRecord));
-  const [showMore, setShowMore] = useState(false);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'saving'; text: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setDraft(createDraft(editingRecord));
     setStatus(null);
-    setShowMore(Boolean(editingRecord));
+    setIsSaving(false);
   }, [editingRecord, settings]);
 
   const symptomAverage = calculateSymptomAverage(draft.symptomScores);
@@ -132,7 +132,7 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
     }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!draft.date || !draft.time) {
       setStatus({ type: 'error', text: '기록 날짜와 시간을 입력해 주세요.' });
       return;
@@ -152,10 +152,22 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
       updatedAt: now.iso,
       photos: draft.photos ?? [],
     };
-    onSave(record);
-    setDraft(createDraft(null));
-    setStatus({ type: 'success', text: editingRecord ? '기록을 수정했습니다.' : '기록을 저장했습니다.' });
-    setShowMore(false);
+    setIsSaving(true);
+    setStatus({ type: 'saving', text: editingRecord ? '수정 내용을 저장하는 중입니다.' : '기록을 저장하는 중입니다.' });
+    try {
+      const result = await onSave(record);
+      setDraft(createDraft(null));
+      setStatus({
+        type: 'success',
+        text: result.serverBacked
+          ? editingRecord ? 'SQLite에 수정 내용을 저장했습니다.' : 'SQLite에 기록을 저장했습니다.'
+          : editingRecord ? '브라우저 로컬 백업에 수정 내용을 저장했습니다. 서버가 연결되면 다시 동기화됩니다.' : '브라우저 로컬 백업에 기록을 저장했습니다. 서버가 연결되면 다시 동기화됩니다.',
+      });
+    } catch {
+      setStatus({ type: 'error', text: '저장 중 문제가 생겼습니다. 입력 내용은 화면에 그대로 남겨두었습니다.' });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -168,7 +180,6 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
         <span className={`severity-badge ${severity.className}`}>{severity.label} · 평균 {symptomAverage}점</span>
       </div>
 
-      {status && <p className={`status-message ${status.type}`}>{status.text}</p>}
       {editingRecord && (
         <div className="inline-actions">
           <span>기존 기록을 수정 중입니다.</span>
@@ -242,64 +253,66 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
         )}
       </fieldset>
 
-      <button type="button" className="wide-button" onClick={() => setShowMore((value) => !value)}>
-        {showMore ? '추가 항목 닫기' : '추가 항목 보기'}
-      </button>
+      <div className="section-divider">
+        <p className="eyebrow">추가 기록</p>
+        <h3>생활 패턴과 약 사용까지 한 번에 확인</h3>
+      </div>
 
-      {showMore && (
-        <>
-          <fieldset className="section-card">
-            <legend>생활 패턴</legend>
-            <div className="form-grid">
-              <label>전날 수면시간<input type="number" min="0" max="24" step="0.5" value={draft.lifestyle.previousNightSleepHours} onChange={(event) => updateLifestyle('previousNightSleepHours', Number(event.target.value))} /></label>
-              <ScoreInput label="수면 만족도" value={draft.lifestyle.sleepSatisfaction} onChange={(value) => updateLifestyle('sleepSatisfaction', value)} />
-              <ScoreInput label="피로도" value={draft.lifestyle.fatigue} onChange={(value) => updateLifestyle('fatigue', value)} />
-              <ScoreInput label="스트레스" value={draft.lifestyle.stress} onChange={(value) => updateLifestyle('stress', value)} />
-            </div>
-            <BooleanGrid items={[
-              ['longScreenTime', '화면을 오래 봤는지'], ['exercised', '운동 여부'], ['sweatedMuch', '땀을 많이 흘렸는지'], ['hotWaterWash', '뜨거운 물로 씻었는지'], ['alcohol', '음주 여부'], ['lateSnack', '야식 여부'], ['longOutdoorTime', '외출 시간이 길었는지'], ['dryIndoorAir', '실내가 건조했는지'], ['seasonalChange', '환절기라고 느끼는지'], ['rubbedOrScratched', '눈이나 피부를 비비거나 긁었는지'],
-            ] as Array<[BooleanKeys<LifestyleLog>, string]>} values={draft.lifestyle} onChange={updateLifestyleBoolean} />
-          </fieldset>
+      <fieldset className="section-card">
+        <legend>생활 패턴</legend>
+        <div className="form-grid">
+          <label>전날 수면시간<input type="number" min="0" max="24" step="0.5" value={draft.lifestyle.previousNightSleepHours} onChange={(event) => updateLifestyle('previousNightSleepHours', Number(event.target.value))} /></label>
+          <ScoreInput label="수면 만족도" value={draft.lifestyle.sleepSatisfaction} onChange={(value) => updateLifestyle('sleepSatisfaction', value)} />
+          <ScoreInput label="피로도" value={draft.lifestyle.fatigue} onChange={(value) => updateLifestyle('fatigue', value)} />
+          <ScoreInput label="스트레스" value={draft.lifestyle.stress} onChange={(value) => updateLifestyle('stress', value)} />
+        </div>
+        <BooleanGrid items={[
+          ['longScreenTime', '화면을 오래 봤는지'], ['exercised', '운동 여부'], ['sweatedMuch', '땀을 많이 흘렸는지'], ['hotWaterWash', '뜨거운 물로 씻었는지'], ['alcohol', '음주 여부'], ['lateSnack', '야식 여부'], ['longOutdoorTime', '외출 시간이 길었는지'], ['dryIndoorAir', '실내가 건조했는지'], ['seasonalChange', '환절기라고 느끼는지'], ['rubbedOrScratched', '눈이나 피부를 비비거나 긁었는지'],
+        ] as Array<[BooleanKeys<LifestyleLog>, string]>} values={draft.lifestyle} onChange={updateLifestyleBoolean} />
+      </fieldset>
 
-          <fieldset className="section-card">
-            <legend>피부 및 두피 관리</legend>
-            <div className="form-grid">
-              <label>사용한 샴푸 이름<input type="text" value={draft.care.shampooName} onChange={(event) => updateCare('shampooName', event.target.value)} /></label>
-              <label>세안제 이름<input type="text" value={draft.care.cleanserName} onChange={(event) => updateCare('cleanserName', event.target.value)} /></label>
-            </div>
-            <BooleanGrid items={[
-              ['washedHair', '머리를 감았는지'], ['newProductUsed', '새로운 샴푸, 세제 또는 생활용품 사용'], ['moisturizerUsed', '보습제 사용 여부'], ['whitePetrolatumUsed', '백색 바세린 사용 여부'],
-            ] as Array<[BooleanKeys<CareLog>, string]>} values={draft.care} onChange={updateCareBoolean} />
-          </fieldset>
+      <fieldset className="section-card">
+        <legend>피부 및 두피 관리</legend>
+        <div className="form-grid">
+          <label>사용한 샴푸 이름<input type="text" value={draft.care.shampooName} onChange={(event) => updateCare('shampooName', event.target.value)} /></label>
+          <label>세안제 이름<input type="text" value={draft.care.cleanserName} onChange={(event) => updateCare('cleanserName', event.target.value)} /></label>
+        </div>
+        <BooleanGrid items={[
+          ['washedHair', '머리를 감았는지'], ['newProductUsed', '새로운 샴푸, 세제 또는 생활용품 사용'], ['moisturizerUsed', '보습제 사용 여부'], ['whitePetrolatumUsed', '백색 바세린 사용 여부'],
+        ] as Array<[BooleanKeys<CareLog>, string]>} values={draft.care} onChange={updateCareBoolean} />
+      </fieldset>
 
-          <fieldset className="section-card">
-            <legend>약 사용 기록</legend>
-            <p className="help-text">약은 처방받은 방법에 따라 사용하고, 이 앱에서는 사용 여부만 기록합니다.</p>
-            <div className="chip-grid">
-              {MEDICATION_KEYS.map((key) => (
-                <label className="check-chip" key={key}>
-                  <input type="checkbox" checked={draft.medications[key]} onChange={(event) => updateMedication(key, event.target.checked)} />
-                  {MEDICATION_LABELS[key]}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+      <fieldset className="section-card">
+        <legend>약 사용 기록</legend>
+        <p className="help-text">약은 처방받은 방법에 따라 사용하고, 이 앱에서는 사용 여부만 기록합니다.</p>
+        <div className="chip-grid">
+          {MEDICATION_KEYS.map((key) => (
+            <label className="check-chip" key={key}>
+              <input type="checkbox" checked={draft.medications[key]} onChange={(event) => updateMedication(key, event.target.checked)} />
+              {MEDICATION_LABELS[key]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
-          <fieldset className="section-card">
-            <legend>휴미라 기록</legend>
-            <label className="check-chip single"><input type="checkbox" checked={draft.humira.used} onChange={(event) => setDraft((current) => ({ ...current, humira: { ...current.humira, used: event.target.checked } }))} />휴미라 투여 여부</label>
-            <div className="form-grid">
-              <label>실제 투여 날짜<input type="date" value={draft.humira.actualInjectionDate} onChange={(event) => updateHumiraDate(event.target.value)} /></label>
-              <label>마지막 투여일로부터 경과 일수<input type="text" readOnly value={draft.humira.daysSinceLastInjection === null ? '-' : `${draft.humira.daysSinceLastInjection}일`} /></label>
-              <label>다음 예상 투여일<input type="text" readOnly value={draft.humira.nextExpectedInjectionDate || '-'} /></label>
-            </div>
-          </fieldset>
+      <fieldset className="section-card">
+        <legend>휴미라 기록</legend>
+        <label className="check-chip single"><input type="checkbox" checked={draft.humira.used} onChange={(event) => setDraft((current) => ({ ...current, humira: { ...current.humira, used: event.target.checked } }))} />휴미라 투여 여부</label>
+        <div className="form-grid">
+          <label>실제 투여 날짜<input type="date" value={draft.humira.actualInjectionDate} onChange={(event) => updateHumiraDate(event.target.value)} /></label>
+          <label>마지막 투여일로부터 경과 일수<input type="text" readOnly value={draft.humira.daysSinceLastInjection === null ? '-' : `${draft.humira.daysSinceLastInjection}일`} /></label>
+          <label>다음 예상 투여일<input type="text" readOnly value={draft.humira.nextExpectedInjectionDate || '-'} /></label>
+        </div>
+      </fieldset>
 
-          <label className="section-card memo-field">자유 메모<textarea value={draft.memo} onChange={(event) => setDraft((current) => ({ ...current, memo: event.target.value }))} rows={5} /></label>
-        </>
-      )}
+      <label className="section-card memo-field">자유 메모<textarea value={draft.memo} onChange={(event) => setDraft((current) => ({ ...current, memo: event.target.value }))} rows={5} /></label>
 
-      <button type="button" className="primary-button" onClick={handleSave}>{editingRecord ? '수정 저장' : '기록 저장'}</button>
+      <div className="save-panel">
+        {status && <p className={`status-message ${status.type}`}>{status.text}</p>}
+        <button type="button" className="primary-button" onClick={() => void handleSave()} disabled={isSaving}>
+          {isSaving ? '저장 중...' : editingRecord ? '수정 저장' : '기록 저장'}
+        </button>
+      </div>
     </section>
   );
 }

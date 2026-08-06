@@ -39,7 +39,7 @@ function App() {
     [data.records],
   );
 
-  function upsertRecord(record: DermatitisRecord) {
+  async function upsertRecord(record: DermatitisRecord): Promise<{ serverBacked: boolean }> {
     setData((current) => {
       const exists = current.records.some((item) => item.id === record.id);
       return {
@@ -48,10 +48,10 @@ function App() {
       };
     });
     setEditingRecord(null);
-    void upsertPersistedRecord(record).then((result) => {
-      setIsServerBacked(result.serverBacked);
-      if (result.serverBacked) setData(result.data);
-    });
+    const result = await upsertPersistedRecord(record);
+    setIsServerBacked(result.serverBacked);
+    if (result.serverBacked) setData(result.data);
+    return { serverBacked: result.serverBacked };
   }
 
   function deleteRecord(id: string) {
