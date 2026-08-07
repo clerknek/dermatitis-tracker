@@ -44,11 +44,13 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
   const [draft, setDraft] = useState<DermatitisRecord>(() => createDraft(editingRecord));
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'saving'; text: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<WoundPhoto | null>(null);
 
   useEffect(() => {
     setDraft(createDraft(editingRecord));
     setStatus(null);
     setIsSaving(false);
+    setSelectedPhoto(null);
   }, [editingRecord, settings]);
 
   const symptomAverage = calculateSymptomAverage(draft.symptomScores);
@@ -244,7 +246,14 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
           <div className="photo-grid">
             {(draft.photos ?? []).map((photo) => (
               <div className="photo-item" key={photo.id}>
-                <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                <button
+                  type="button"
+                  className="photo-preview-button"
+                  onClick={() => setSelectedPhoto(photo)}
+                  aria-label={`${photo.caption || photo.name || '상처부위 사진'} 크게 보기`}
+                >
+                  <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                </button>
                 <input type="text" value={photo.caption} placeholder="사진 메모" onChange={(event) => updatePhotoCaption(photo.id, event.target.value)} />
                 <button type="button" className="secondary-button" onClick={() => removePhoto(photo.id)}>사진 삭제</button>
               </div>
@@ -313,6 +322,20 @@ export function TodayPage({ editingRecord, settings, onSave, onCancelEdit }: Tod
           {isSaving ? '저장 중...' : editingRecord ? '수정 저장' : '기록 저장'}
         </button>
       </div>
+      {selectedPhoto && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedPhoto(null)}>
+          <div className="modal-panel photo-modal" role="dialog" aria-modal="true" aria-labelledby="draft-photo-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">미리보기</p>
+                <h3 id="draft-photo-modal-title">{selectedPhoto.caption || selectedPhoto.name || '상처부위 사진'}</h3>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setSelectedPhoto(null)} aria-label="모달 닫기">X</button>
+            </div>
+            <img src={selectedPhoto.dataUrl} alt={selectedPhoto.caption || selectedPhoto.name || '상처부위 사진'} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

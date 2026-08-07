@@ -119,7 +119,9 @@ h3 {
 .hero-card,
 .record-header,
 .inline-actions,
-.chart-legend {
+.chart-legend,
+.card-title-row,
+.modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -370,6 +372,22 @@ dd {
   margin-bottom: 0;
 }
 
+.card-title-row {
+  margin-bottom: 12px;
+}
+
+.card-title-row h3,
+.modal-header h3 {
+  margin-bottom: 0;
+}
+
+.tap-hint {
+  flex: 0 0 auto;
+  color: #5d6e68;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -405,6 +423,28 @@ dd {
 
 .photo-item.readonly {
   margin: 0;
+}
+
+.photo-preview-button,
+.chart-button {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.photo-preview-button {
+  display: block;
+  cursor: zoom-in;
+}
+
+.photo-preview-button:focus-visible,
+.chart-button:focus-visible,
+.icon-button:focus-visible {
+  outline: 3px solid rgba(31, 122, 85, 0.35);
+  outline-offset: 3px;
 }
 
 .inline-actions.right {
@@ -445,11 +485,25 @@ dd {
   gap: 10px;
 }
 
+.chart-button {
+  cursor: zoom-in;
+}
+
 svg {
   width: 100%;
   min-height: 160px;
   border-radius: 8px;
   background: linear-gradient(#f7faf7 1px, transparent 1px) 0 0 / 100% 25%;
+}
+
+.chart-wrap-large svg {
+  min-height: 280px;
+}
+
+svg text {
+  fill: #53645e;
+  font-size: 18px;
+  font-weight: 800;
 }
 
 .chart-legend {
@@ -537,6 +591,53 @@ svg {
   margin-bottom: 0;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(18, 31, 26, 0.68);
+}
+
+.modal-panel {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 900px);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(12, 21, 17, 0.28);
+}
+
+.photo-modal {
+  width: min(100%, 960px);
+}
+
+.photo-modal img {
+  width: 100%;
+  max-height: min(72dvh, 760px);
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f2f5f2;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #b9c9c0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #263832;
+  font-weight: 900;
+}
+
 @media (min-width: 680px) {
   .app-shell {
     padding: 26px 22px 44px;
@@ -587,5 +688,23 @@ svg {
 
   .score-stack {
     text-align: left;
+  }
+
+  .card-title-row,
+  .modal-header {
+    align-items: flex-start;
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .modal-panel {
+    max-height: calc(100dvh - 20px);
+    padding: 12px;
+  }
+
+  .chart-wrap-large svg {
+    min-height: 220px;
   }
 }

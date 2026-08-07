@@ -16,6 +16,7 @@ const emptyFilter: DateRangeFilter = { startDate: '', endDate: '', area: '' };
 export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
   const [filter, setFilter] = useState<DateRangeFilter>(emptyFilter);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{ src: string; caption: string; recordDate: string } | null>(null);
 
   const filteredRecords = useMemo(() => records.filter((record) => isRecordInDateRange(record, filter)), [records, filter]);
 
@@ -85,7 +86,14 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
                     <div className="photo-grid compact">
                       {record.photos.map((photo) => (
                         <figure className="photo-item readonly" key={photo.id}>
-                          <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                          <button
+                            type="button"
+                            className="photo-preview-button"
+                            onClick={() => setSelectedPhoto({ src: photo.dataUrl, caption: photo.caption || photo.name || '사진 메모 없음', recordDate: `${record.date} ${record.time}` })}
+                            aria-label={`${photo.caption || photo.name || '상처부위 사진'} 크게 보기`}
+                          >
+                            <img src={photo.dataUrl} alt={photo.caption || photo.name || '상처부위 사진'} />
+                          </button>
                           <figcaption>{photo.caption || photo.name || '사진 메모 없음'}</figcaption>
                         </figure>
                       ))}
@@ -102,6 +110,20 @@ export function ListPage({ records, onEdit, onDelete }: ListPageProps) {
           );
         })}
       </div>
+      {selectedPhoto && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedPhoto(null)}>
+          <div className="modal-panel photo-modal" role="dialog" aria-modal="true" aria-labelledby="photo-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">{selectedPhoto.recordDate}</p>
+                <h3 id="photo-modal-title">{selectedPhoto.caption}</h3>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setSelectedPhoto(null)} aria-label="모달 닫기">X</button>
+            </div>
+            <img src={selectedPhoto.src} alt={selectedPhoto.caption} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

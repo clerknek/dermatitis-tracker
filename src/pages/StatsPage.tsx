@@ -8,6 +8,7 @@ type Period = 7 | 30;
 
 export function StatsPage({ records }: { records: DermatitisRecord[] }) {
   const [period, setPeriod] = useState<Period>(7);
+  const [isChartOpen, setIsChartOpen] = useState(false);
   const filtered = useMemo(() => filterRecentRecords(records, period), [records, period]);
   const trend = useMemo(() => buildDailyTrend(filtered), [filtered]);
   const avgItching = average(filtered.map((record) => record.symptomScores.itching));
@@ -49,11 +50,15 @@ export function StatsPage({ records }: { records: DermatitisRecord[] }) {
       </div>
 
       <div className="section-card">
-        <h3>날짜별 점수 추이</h3>
-        {trend.length === 0 ? <p className="empty-state compact-empty">통계를 표시할 기록이 없습니다.</p> : <TrendChart trend={trend} />}
+        <div className="card-title-row">
+          <h3>날짜별 점수 추이</h3>
+          {trend.length > 0 && <span className="tap-hint">눌러서 크게 보기</span>}
+        </div>
+        {trend.length === 0 ? <p className="empty-state compact-empty">통계를 표시할 기록이 없습니다.</p> : <TrendChart trend={trend} onOpen={() => setIsChartOpen(true)} />}
       </div>
 
       {pattern && <p className="pattern-note">{pattern}</p>}
+      {isChartOpen && <ChartModal trend={trend} period={period} onClose={() => setIsChartOpen(false)} />}
     </section>
   );
 }
@@ -73,22 +78,56 @@ function buildDailyTrend(records: DermatitisRecord[]): Array<{ date: string; itc
   }));
 }
 
-function TrendChart({ trend }: { trend: Array<{ date: string; itching: number; averageScore: number }> }) {
-  const width = 320;
-  const height = 160;
+function TrendChart({ trend, onOpen }: { trend: Array<{ date: string; itching: number; averageScore: number }>; onOpen?: () => void }) {
+  return (
+    <button type="button" className="chart-button" onClick={onOpen} aria-label="날짜별 점수 추이 크게 보기">
+      <TrendGraphic trend={trend} />
+    </button>
+  );
+}
+
+function ChartModal({ trend, period, onClose }: { trend: Array<{ date: string; itching: number; averageScore: number }>; period: Period; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="modal-panel chart-modal" role="dialog" aria-modal="true" aria-labelledby="chart-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">최근 {period}일</p>
+            <h3 id="chart-modal-title">날짜별 점수 추이</h3>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="모달 닫기">X</button>
+        </div>
+        <TrendGraphic trend={trend} large />
+      </div>
+    </div>
+  );
+}
+
+function TrendGraphic({ trend, large = false }: { trend: Array<{ date: string; itching: number; averageScore: number }>; large?: boolean }) {
+  const width = 640;
+  const height = large ? 300 : 180;
+  const topPadding = 14;
+  const bottomPadding = 22;
+  const plotHeight = height - topPadding - bottomPadding;
   const points = trend.map((item, index) => {
     const x = trend.length === 1 ? width / 2 : (index / (trend.length - 1)) * width;
-    return { x, itchY: height - (item.itching / 10) * height, avgY: height - (item.averageScore / 10) * height, item };
+    return {
+      x,
+      itchY: topPadding + plotHeight - (item.itching / 10) * plotHeight,
+      avgY: topPadding + plotHeight - (item.averageScore / 10) * plotHeight,
+      item,
+    };
   });
   const itchLine = points.map((point) => `${point.x},${point.itchY}`).join(' ');
   const avgLine = points.map((point) => `${point.x},${point.avgY}`).join(' ');
   return (
-    <div className="chart-wrap">
+    <div className={large ? 'chart-wrap chart-wrap-large' : 'chart-wrap'}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="날짜별 가려움 및 평균 증상 점수 추이">
         <polyline points={itchLine} fill="none" stroke="#d65d3a" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         <polyline points={avgLine} fill="none" stroke="#2f8f68" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         {points.map((point) => <circle key={`${point.item.date}-itch`} cx={point.x} cy={point.itchY} r="4" fill="#d65d3a" />)}
         {points.map((point) => <circle key={`${point.item.date}-avg`} cx={point.x} cy={point.avgY} r="4" fill="#2f8f68" />)}
+        {large && points.map((point) => <text key={`${point.item.date}-label`} x={point.x} y={height - 4} textAnchor="middle">{point.item.date.slice(5)}</text>)}
       </svg>
       <div className="chart-legend"><span className="itch-dot">가려움</span><span className="avg-dot">전체 평균</span></div>
       <div className="mini-trend-list">{trend.map((item) => <span key={item.date}>{item.date.slice(5)} · 가려움 {item.itching} / 평균 {item.averageScore}</span>)}</div>
